@@ -1,0 +1,27 @@
+# CSE 594 - RAG Hallucination Detector
+# Core dependencies for all 8 weeks
+
+# ── Week 1: Data structures & utilities ──────
+# (stdlib only: dataclasses, json, uuid, os — no pip installs needed)
+
+# ── Week 2: RAG Pipeline ─────────────────────
+faiss-cpu==1.8.0
+sentence-transformers==2.7.0
+transformers==4.41.0
+torch==2.3.0
+numpy==1.26.4
+
+# ── Week 3–5: LLM Verifier ───────────────────
+openai==1.30.1
+tiktoken==0.7.0
+
+# ── Week 6–7: Evaluation & Analysis ──────────
+scikit-learn==1.5.0
+pandas==2.2.2
+matplotlib==3.9.0
+seaborn==0.13.2
+
+# ── Utilities ─────────────────────────────────
+python-dotenv==1.0.1      # Load OPENAI_API_KEY from .env
+tqdm==4.66.4              # Progress bars
+nltk==3.8.1               # Sentence tokenization (Week 4)

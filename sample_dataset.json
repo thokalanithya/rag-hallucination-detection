@@ -1,0 +1,265 @@
+{
+  "version": "1.0",
+  "total_entries": 10,
+  "label_distribution": {
+    "grounded": 2,
+    "unsupported_hallucination": 2,
+    "context_conflicting_hallucination": 2,
+    "fabricated_detail_or_entity": 2,
+    "overgeneralization_or_extrapolation": 1,
+    "partially_supported_hallucination": 1
+  },
+  "entries": [
+
+    {
+      "question": "What is the role of CRISPR-Cas9 in gene editing?",
+      "retrieved_context": [
+        {
+          "text": "CRISPR-Cas9 is a molecular tool derived from a bacterial immune system. It uses a guide RNA to direct the Cas9 protein to a specific DNA sequence, where it introduces a double-strand break. This break can be repaired by the cell's own mechanisms, either disabling the gene (knockout) or inserting a new sequence (knock-in). The precision of CRISPR-Cas9 has made it widely used in genetic research and therapeutic development.",
+          "source": "Doudna & Charpentier, Science 2012",
+          "chunk_index": 0,
+          "relevance_score": 0.95
+        }
+      ],
+      "generated_answer": "CRISPR-Cas9 is a gene-editing tool derived from a bacterial immune system. It uses a guide RNA to direct the Cas9 protein to a specific DNA location, where it cuts both strands of DNA. This allows researchers to disable a gene or insert a new sequence using the cell's natural repair mechanisms.",
+      "ground_truth_label": "grounded",
+      "ground_truth_note": "All claims directly map to statements in the retrieved context. No invented details.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "a1b2c3d4",
+        "created_at": "2025-03-15T10:00:00",
+        "domain": "scientific_academic",
+        "difficulty": "easy",
+        "notes": "Clean grounded example for baseline calibration."
+      }
+    },
+
+    {
+      "question": "What did the study conclude about the effect of sleep deprivation on memory consolidation?",
+      "retrieved_context": [
+        {
+          "text": "This study examined 45 undergraduate participants who were randomly assigned to a sleep-deprived group (fewer than 4 hours of sleep) or a control group (8 hours of sleep). Memory consolidation was assessed using a word-pair recall task administered 12 hours after initial learning. The sleep-deprived group showed a statistically significant reduction in recall accuracy (p < 0.01), with a mean recall rate of 52% compared to 78% in the control group.",
+          "source": "Walker et al., Journal of Sleep Research, 2020",
+          "chunk_index": 1,
+          "relevance_score": 0.92
+        }
+      ],
+      "generated_answer": "The study found that sleep deprivation significantly impairs memory consolidation. Participants who slept fewer than 4 hours recalled words at a rate of 52%, compared to 78% in the control group, a difference that was statistically significant (p < 0.01).",
+      "ground_truth_label": "grounded",
+      "ground_truth_note": "All statistics and conclusions match the context exactly.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "b2c3d4e5",
+        "created_at": "2025-03-15T10:05:00",
+        "domain": "scientific_academic",
+        "difficulty": "easy",
+        "notes": "Numerical grounded example to test that the verifier handles statistics correctly."
+      }
+    },
+
+    {
+      "question": "How does the blood-brain barrier protect the central nervous system?",
+      "retrieved_context": [
+        {
+          "text": "The blood-brain barrier (BBB) is formed by specialized endothelial cells lining brain capillaries, which are connected by tight junctions. These tight junctions prevent most substances from passing freely between the blood and brain. The BBB selectively allows passage of small lipophilic molecules and uses specific transport proteins for essential nutrients such as glucose and amino acids.",
+          "source": "Abbott et al., Nature Reviews Neuroscience, 2010",
+          "chunk_index": 0,
+          "relevance_score": 0.88
+        }
+      ],
+      "generated_answer": "The blood-brain barrier protects the central nervous system by using specialized endothelial cells connected by tight junctions. It restricts the passage of harmful substances while allowing essential nutrients through dedicated transport proteins. Additionally, the BBB contains resident macrophages called microglia that patrol for pathogens and trigger an immune response when needed.",
+      "ground_truth_label": "unsupported_hallucination",
+      "ground_truth_note": "The claim about microglia patrolling for pathogens is not mentioned anywhere in the retrieved context. Microglia are also technically not part of the BBB structure.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "c3d4e5f6",
+        "created_at": "2025-03-15T10:10:00",
+        "domain": "scientific_academic",
+        "difficulty": "medium",
+        "notes": "Model introduces a plausible but unsupported neuroscience claim."
+      }
+    },
+
+    {
+      "question": "What causes antibiotic resistance in bacteria?",
+      "retrieved_context": [
+        {
+          "text": "Antibiotic resistance arises when bacteria evolve mechanisms to withstand the effects of antibiotics. Key mechanisms include the production of enzymes that inactivate antibiotics (e.g., beta-lactamases), mutations in target proteins that reduce antibiotic binding, and efflux pumps that actively expel antibiotics from the bacterial cell. The overuse and misuse of antibiotics in clinical and agricultural settings are major drivers of resistance spread.",
+          "source": "WHO Report on Antimicrobial Resistance, 2019",
+          "chunk_index": 0,
+          "relevance_score": 0.91
+        }
+      ],
+      "generated_answer": "Antibiotic resistance is caused by bacteria acquiring resistance genes through horizontal gene transfer, where genetic material is passed between bacteria via plasmids or bacteriophages. Overuse of antibiotics in hospitals and farms accelerates this spread. Resistant bacteria can also form biofilms that are impenetrable to most drugs.",
+      "ground_truth_label": "unsupported_hallucination",
+      "ground_truth_note": "Horizontal gene transfer, plasmids, bacteriophages, and biofilms are not mentioned in the retrieved context. Only the overuse claim is partially supported.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "d4e5f6g7",
+        "created_at": "2025-03-15T10:15:00",
+        "domain": "scientific_academic",
+        "difficulty": "medium",
+        "notes": "Model relies on general background knowledge rather than the context."
+      }
+    },
+
+    {
+      "question": "Was the vaccine effective in reducing hospitalizations in the trial?",
+      "retrieved_context": [
+        {
+          "text": "In the Phase 3 clinical trial, 94.5% of participants who received the vaccine did not develop severe disease requiring hospitalization, compared to 67.2% in the placebo group. The difference was statistically significant (p < 0.001). Adverse events were mild to moderate and resolved within 72 hours in most cases.",
+          "source": "Phase 3 Trial Report, New England Journal of Medicine, 2021",
+          "chunk_index": 0,
+          "relevance_score": 0.97
+        }
+      ],
+      "generated_answer": "The vaccine was not effective at reducing hospitalizations. The trial showed no statistically significant difference between the vaccine and placebo groups in terms of severe disease outcomes.",
+      "ground_truth_label": "context_conflicting_hallucination",
+      "ground_truth_note": "The context clearly states 94.5% vs 67.2% and p < 0.001 significance. The answer directly contradicts both the direction and the significance of the finding.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "e5f6g7h8",
+        "created_at": "2025-03-15T10:20:00",
+        "domain": "scientific_academic",
+        "difficulty": "easy",
+        "notes": "Clear factual contradiction — useful for testing verifier sensitivity to negation."
+      }
+    },
+
+    {
+      "question": "What were the findings on CO2 levels and global temperature in the paleoclimate study?",
+      "retrieved_context": [
+        {
+          "text": "Analysis of Antarctic ice cores spanning the last 800,000 years revealed a strong correlation between atmospheric CO2 concentrations and global mean temperature. During glacial periods, CO2 levels dropped to approximately 180 ppm, coinciding with temperature decreases of 8–10°C relative to pre-industrial levels. During interglacial periods, CO2 rose to around 280 ppm and temperatures were comparable to or slightly warmer than today.",
+          "source": "Lüthi et al., Nature, 2008",
+          "chunk_index": 0,
+          "relevance_score": 0.93
+        }
+      ],
+      "generated_answer": "The paleoclimate study found that rising CO2 levels caused global temperatures to decrease during glacial periods. The data showed that higher CO2 concentrations were associated with colder temperatures, suggesting an inverse relationship between the two variables.",
+      "ground_truth_label": "context_conflicting_hallucination",
+      "ground_truth_note": "The context describes a positive correlation (higher CO2 = warmer temps). The answer inverts this relationship, claiming CO2 caused cooling — a direct contradiction.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "f6g7h8i9",
+        "created_at": "2025-03-15T10:25:00",
+        "domain": "scientific_academic",
+        "difficulty": "hard",
+        "notes": "Subtle contradiction — model reverses the direction of a correlation."
+      }
+    },
+
+    {
+      "question": "Who developed the transformer architecture and when was it published?",
+      "retrieved_context": [
+        {
+          "text": "The transformer architecture was introduced in a landmark paper that proposed using self-attention mechanisms to process sequential data without recurrence. The architecture consists of an encoder and decoder, each built from stacked attention layers and feed-forward networks. It achieved state-of-the-art results on machine translation tasks.",
+          "source": "Vaswani et al., NeurIPS 2017",
+          "chunk_index": 0,
+          "relevance_score": 0.89
+        }
+      ],
+      "generated_answer": "The transformer architecture was developed by Geoffrey Hinton and Yann LeCun at Google Brain and published in their 2016 paper 'Attention Is All You Need' in the journal Nature Machine Intelligence.",
+      "ground_truth_label": "fabricated_detail_or_entity",
+      "ground_truth_note": "The context does not name the authors. The answer fabricates author names (Hinton and LeCun were not authors), the year (2016 vs 2017), and the venue (NeurIPS, not Nature Machine Intelligence).",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "g7h8i9j0",
+        "created_at": "2025-03-15T10:30:00",
+        "domain": "scientific_academic",
+        "difficulty": "medium",
+        "notes": "Classic fabrication — model invents specific author names and citation details not present in context."
+      }
+    },
+
+    {
+      "question": "What sample size was used in the study on mindfulness and anxiety?",
+      "retrieved_context": [
+        {
+          "text": "This randomized controlled trial investigated the effect of an 8-week mindfulness-based stress reduction (MBSR) program on generalized anxiety disorder. Participants were recruited from outpatient psychiatric clinics and screened using the GAD-7 scale. The MBSR group showed a 42% reduction in anxiety scores post-intervention, which was significantly greater than the waitlist control group.",
+          "source": "Hoge et al., JAMA Psychiatry, 2013",
+          "chunk_index": 0,
+          "relevance_score": 0.87
+        }
+      ],
+      "generated_answer": "The study used a sample size of 93 participants, with 48 in the MBSR group and 45 in the control group. Participants showed a 42% reduction in anxiety scores following the 8-week mindfulness program.",
+      "ground_truth_label": "fabricated_detail_or_entity",
+      "ground_truth_note": "The 42% reduction is grounded, but the specific sample sizes (93, 48, 45) are not mentioned in the context and appear to be fabricated numbers.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "h8i9j0k1",
+        "created_at": "2025-03-15T10:35:00",
+        "domain": "scientific_academic",
+        "difficulty": "hard",
+        "notes": "Subtle fabrication — only the numeric details are invented; the rest is grounded."
+      }
+    },
+
+    {
+      "question": "What does the study on gut microbiome diversity imply about human health?",
+      "retrieved_context": [
+        {
+          "text": "A longitudinal cohort study of 1,200 adults found that individuals with higher gut microbiome diversity had lower rates of inflammatory bowel disease (IBD) and were less likely to develop type 2 diabetes over a 5-year follow-up period. The association remained significant after adjusting for diet, BMI, and antibiotic use.",
+          "source": "Sonnenburg & Bäckhed, Nature, 2016",
+          "chunk_index": 0,
+          "relevance_score": 0.90
+        }
+      ],
+      "generated_answer": "Higher gut microbiome diversity is universally protective against all major chronic diseases, including cardiovascular disease, cancer, Alzheimer's disease, and autoimmune disorders. This study proves that maintaining microbiome diversity is the single most important factor in human health and longevity.",
+      "ground_truth_label": "overgeneralization_or_extrapolation",
+      "ground_truth_note": "The context supports a link to IBD and type 2 diabetes specifically. The answer grossly overgeneralizes to 'all chronic diseases' and makes causal claims the study does not support.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "i9j0k1l2",
+        "created_at": "2025-03-15T10:40:00",
+        "domain": "scientific_academic",
+        "difficulty": "medium",
+        "notes": "Classic overgeneralization from a specific association to a universal causal claim."
+      }
+    },
+
+    {
+      "question": "What did the fMRI study reveal about emotional regulation in adolescents?",
+      "retrieved_context": [
+        {
+          "text": "Functional MRI scans of 60 adolescents (aged 13–17) showed increased amygdala activation compared to adult controls when viewing emotionally negative images. The prefrontal cortex (PFC), which is associated with top-down emotional regulation, showed weaker functional connectivity with the amygdala in adolescents than in adults.",
+          "source": "Casey et al., Developmental Science, 2008",
+          "chunk_index": 0,
+          "relevance_score": 0.91
+        }
+      ],
+      "generated_answer": "The fMRI study found that adolescents showed increased amygdala activation when viewing negative images. The prefrontal cortex showed weaker connectivity with the amygdala compared to adults, suggesting reduced top-down emotional regulation. The study also reported elevated cortisol levels in adolescents during emotional tasks, indicating heightened physiological stress responses.",
+      "ground_truth_label": "partially_supported_hallucination",
+      "ground_truth_note": "The amygdala activation and PFC connectivity findings are grounded. The claim about elevated cortisol levels is not mentioned in the context and is fabricated.",
+      "answer_score": null,
+      "predicted_label": null,
+      "sentence_scores": [],
+      "metadata": {
+        "entry_id": "j0k1l2m3",
+        "created_at": "2025-03-15T10:45:00",
+        "domain": "scientific_academic",
+        "difficulty": "hard",
+        "notes": "Mixed entry — two grounded sentences followed by one hallucinated sentence. Good for sentence-level detection tests."
+      }
+    }
+
+  ]
+}
