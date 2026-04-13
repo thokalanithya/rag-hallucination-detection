@@ -1,21 +1,22 @@
 """
 generator.py
 ------------
-Generates an answer from top-K retrieved chunks using GPT-4o (Azure OpenAI).
+Generates answers from top-K retrieved chunks using GPT-4o (Azure OpenAI).
+
+Two functions:
+    generate_answer()               — plain answer, no citations
+    generate_answer_with_citations()— answer with inline [1][2] citations
+                                      + structured citation map
 
 Pipeline position:
-    chunk_document() → embed_chunks() → retrieve_top_k() → generate_answer()
+    retrieve() → rerank() → generate_answer_with_citations()
 
 Usage
 -----
-    from chunker import chunk_document
-    from embedder import embed_chunks, retrieve_top_k
-    from generator import generate_answer
+    from rag.generator import generate_answer_with_citations
 
-    chunks   = chunk_document(document_text)
-    embedded = embed_chunks(chunks)
-    top_k    = retrieve_top_k(question, embedded)
-    answer, context = generate_answer(question, top_k)
+    answer, context, citations = generate_answer_with_citations(question, chunks)
+    # citations = {1: {paper_id, title, chunk_index, tokens}, 2: {...}, ...}
 """
 
 import sys
@@ -47,31 +48,123 @@ Question: {question}
 Answer:"""
 
 
-def generate_answer(question: str, top_k_chunks: list[dict]) -> tuple[str, str]:
+CITATION_PROMPT = """You are a research assistant. Answer the question using ONLY the numbered context passages below.
+
+Rules:
+- Cite every claim inline with the passage number in brackets, e.g. [1] or [2][3].
+- Do NOT include any information not present in the passages.
+- If no passage answers the question, write "I don't have enough information to answer this." in the ANSWER section and leave the other sections empty.
+
+Respond in exactly this format:
+
+ANSWER
+------
+<your answer here with inline citations like [1] or [2]>
+
+SUPPORTING CONTEXT
+------------------
+For each citation used, quote the exact sentence(s) from the passage that support your answer:
+[N] "<exact quote from passage N>"
+
+REFERENCES
+----------
+For each citation used, list:
+[N] Paper: <paper_id> — <title>
+    Chunk: <chunk_index> | Tokens: <token_start>–<token_end>
+
+---
+
+Context passages:
+{context}
+
+Question: {question}"""
+
+
+# def generate_answer(question: str, top_k_chunks: list[dict]) -> tuple[str, str]:
+#     """
+#     Generate an answer from the top-K retrieved chunks.
+
+#     Parameters
+#     ----------
+#     question      : the user's question
+#     top_k_chunks  : output of retrieve_top_k() — list of chunk dicts with 'text' field
+
+#     Returns
+#     -------
+#     (answer, context)
+#         answer  : GPT-4o's generated answer
+#         context : the concatenated top-K chunk texts used as input
+#     """
+#     context  = "\n\n".join(c["text"] for c in top_k_chunks)
+#     prompt   = ANSWER_PROMPT.format(context=context, question=question)
+#     response = _client.chat.completions.create(
+#         model=_model,
+#         messages=[{"role": "user", "content": prompt}],
+#         temperature=0.0,
+#         max_tokens=512,
+#     )
+#     answer = response.choices[0].message.content.strip()
+#     return answer, context
+
+
+def generate_answer_with_citations(
+    question: str,
+    top_k_chunks: list[dict],
+) -> tuple[str, str, dict]:
     """
-    Generate an answer from the top-K retrieved chunks.
+    Generate an answer with inline citations pointing to source chunks.
+
+    Each chunk is numbered [1], [2], ... in the prompt. The LLM is instructed
+    to cite inline. A citation map is returned so callers can resolve [1] →
+    exact paper, chunk, and token range.
 
     Parameters
     ----------
-    question      : the user's question
-    top_k_chunks  : output of retrieve_top_k() — list of chunk dicts with 'text' field
+    question     : the user's question
+    top_k_chunks : re-ranked chunk dicts — must have keys:
+                   text, paper_id, title, chunk_index, token_start, token_end
 
     Returns
     -------
-    (answer, context)
-        answer  : GPT-4o's generated answer
-        context : the concatenated top-K chunk texts used as input
+    (answer, context, citations)
+        answer    : full structured LLM response (ANSWER + SUPPORTING CONTEXT + REFERENCES)
+        context   : the numbered context string sent to the LLM
+        citations : dict mapping citation number (int) to chunk metadata:
+                    {1: {paper_id, title, chunk_index, token_start, token_end, text}, ...}
     """
-    context  = "\n\n".join(c["text"] for c in top_k_chunks)
-    prompt   = ANSWER_PROMPT.format(context=context, question=question)
+    # Build numbered context block and citation map in one pass
+    context_parts = []
+    citations = {}
+
+    for number, chunk in enumerate(top_k_chunks, start=1):
+        header = (
+            f"[{number}] Source: {chunk['paper_id']} — "
+            f"{chunk['title'][:60]} | "
+            f"chunk {chunk['chunk_index']} | "
+            f"tokens {chunk['token_start']}–{chunk['token_end']}"
+        )
+        context_parts.append(f"{header}\n{chunk['text'].strip()}")
+
+        citations[number] = {
+            "paper_id":    chunk["paper_id"],
+            "title":       chunk["title"],
+            "chunk_index": chunk["chunk_index"],
+            "token_start": chunk["token_start"],
+            "token_end":   chunk["token_end"],
+            "text":        chunk["text"],
+        }
+
+    context = "\n\n".join(context_parts)
+    prompt  = CITATION_PROMPT.format(context=context, question=question)
+
     response = _client.chat.completions.create(
         model=_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
-        max_tokens=512,
+        max_tokens=1500,
     )
     answer = response.choices[0].message.content.strip()
-    return answer, context
+    return answer, context, citations
 
 
 if __name__ == "__main__":

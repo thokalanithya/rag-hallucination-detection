@@ -1,100 +1,107 @@
 """
 chunker.py
 ----------
-Splits a document into overlapping fixed-size word chunks.
+Splits a document into overlapping fixed-size token chunks.
 
-Uses CHUNK_SIZE and CHUNK_OVERLAP from config.py.
+Uses CHUNK_SIZE, CHUNK_OVERLAP, and CHUNK_ENCODING from config.py.
+
+Switching from word-based to token-based splitting ensures chunk sizes are
+consistent with the embedding model's actual context window, and aligns with
+the 500–800 token target for the Qasper RAG pipeline.
 
 Usage
 -----
-    from chunker import chunk_document
+    from rag.chunker import chunk_document
 
     chunks = chunk_document("Your long document text here...")
     for chunk in chunks:
-        print(chunk["index"], chunk["text"])
+        print(chunk["index"], chunk["token_count"], chunk["text"][:80])
 """
 
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import CHUNK_SIZE, CHUNK_OVERLAP
+import tiktoken
+from config import CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_ENCODING
 
 
-def chunk_document(document: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[dict]:
+def chunk_document(
+    document: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+    encoding_name: str = CHUNK_ENCODING,
+) -> list[dict]:
     """
-    Split a document into overlapping word-based chunks.
+    Split a document into overlapping token-based chunks.
 
     Parameters
     ----------
-    document   : the full document text
-    chunk_size : number of words per chunk  (default: CHUNK_SIZE = 300)
-    overlap    : number of words shared between consecutive chunks (default: CHUNK_OVERLAP = 50)
+    document      : the full document text
+    chunk_size    : number of tokens per chunk  (default: CHUNK_SIZE = 600)
+    overlap       : number of tokens shared between consecutive chunks
+                    (default: CHUNK_OVERLAP = 100)
+    encoding_name : tiktoken encoding to use   (default: CHUNK_ENCODING = "cl100k_base")
 
     Returns
     -------
     List of dicts, each with:
-        index      : int  — chunk number (0-based)
-        text       : str  — chunk text
-        word_start : int  — starting word index in the original document
-        word_end   : int  — ending word index in the original document
-        word_count : int  — number of words in this chunk
+        index        : int  — chunk number (0-based)
+        text         : str  — decoded chunk text
+        token_start  : int  — starting token index in the original document
+        token_end    : int  — ending token index in the original document
+        token_count  : int  — number of tokens in this chunk
     """
-    words = document.split()
-    total_words = len(words)
+    enc = tiktoken.get_encoding(encoding_name)
+    token_ids = enc.encode(document)
+    total_tokens = len(token_ids)
 
     chunks = []
     start = 0
     index = 0
+    step = chunk_size - overlap  # how far to advance after each chunk
 
-    while start < total_words:
-        end = min(start + chunk_size, total_words)
-        chunk_words = words[start:end]
+    while start < total_tokens:
+        end = min(start + chunk_size, total_tokens)
+        chunk_token_ids = token_ids[start:end]
 
         chunks.append({
-            "index":      index,
-            "text":       " ".join(chunk_words),
-            "word_start": start,
-            "word_end":   end,
-            "word_count": len(chunk_words),
+            "index":       index,
+            "text":        enc.decode(chunk_token_ids),
+            "token_start": start,
+            "token_end":   end,
+            "token_count": len(chunk_token_ids),
         })
 
         index += 1
 
-        # If we've reached the end, stop
-        if end == total_words:
+        if end == total_tokens:
             break
 
-        # Move forward by (chunk_size - overlap) so chunks share 'overlap' words
-        start += chunk_size - overlap
+        start += step
 
     return chunks
 
 
 if __name__ == "__main__":
-    sample = """
-    Photosynthesis is the process by which green plants, algae, and some bacteria
-    convert light energy into chemical energy stored in glucose. This process occurs
-    primarily in the chloroplasts, which contain a green pigment called chlorophyll.
-    Chlorophyll absorbs sunlight — mostly in the red and blue wavelengths — and uses
-    that energy to drive a series of chemical reactions. The overall equation for
-    photosynthesis is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. This means plants
-    take in carbon dioxide and water, and with the help of sunlight, produce glucose
-    and release oxygen as a byproduct. The glucose produced is used by the plant as
-    an energy source for growth, reproduction, and other metabolic processes. Without
-    photosynthesis, most life on Earth would not be possible, as it forms the base of
-    nearly all food chains and is responsible for the oxygen in our atmosphere.
-    Photosynthesis occurs in two main stages: the light-dependent reactions and the
-    light-independent reactions (Calvin cycle). In the light-dependent reactions,
-    sunlight is used to split water molecules and generate ATP and NADPH. In the Calvin
-    cycle, these energy carriers are used to fix carbon dioxide into organic molecules.
-    """ * 3  # repeat to get enough words to see multiple chunks
+    sample = (
+        "Attention mechanisms have become an integral part of compelling sequence "
+        "modeling and transduction models in various tasks, allowing modeling of "
+        "dependencies without regard to their distance in the input or output "
+        "sequences. In all but a few cases, however, such attention mechanisms are "
+        "used in conjunction with a recurrent network. The Transformer model "
+        "architecture eschews recurrence and instead relies entirely on an attention "
+        "mechanism to draw global dependencies between input and output. "
+    ) * 30  # ~1 600 tokens — enough to see multiple chunks
 
-    chunks = chunk_document(sample, chunk_size=50, overlap=10)
+    chunks = chunk_document(sample, chunk_size=600, overlap=100)
 
-    print(f"Document words : {len(sample.split())}")
-    print(f"Chunks created : {len(chunks)}\n")
+    print(f"Document tokens : {len(tiktoken.get_encoding(CHUNK_ENCODING).encode(sample))}")
+    print(f"Chunks created  : {len(chunks)}\n")
     for c in chunks:
-        print(f"  Chunk {c['index']} | words {c['word_start']}–{c['word_end']} ({c['word_count']} words)")
-        print(f"    {c['text'][:80]}...")
+        print(
+            f"  Chunk {c['index']:02d} | tokens {c['token_start']}–{c['token_end']} "
+            f"({c['token_count']} tokens)"
+        )
+        print(f"    {c['text'][:90].strip()}...")
         print()

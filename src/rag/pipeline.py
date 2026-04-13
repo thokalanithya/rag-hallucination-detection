@@ -1,15 +1,16 @@
 """
 pipeline.py
 -----------
-Full RAG pipeline with agentic hallucination detection.
+Full RAG pipeline with ChromaDB retrieval and hallucination detection.
 
 Flow:
-    document + question
-        → chunk_document()   split into overlapping word chunks
-        → embed_chunks()     encode chunks into vectors
-        → retrieve_top_k()   find most relevant chunks via cosine similarity
-        → generate_answer()  GPT-4o answers using only retrieved context
-        → run_agent()        agentic detector scores and classifies the answer
+    question
+        → vector_store.retrieve()   query ChromaDB for top-k relevant chunks
+        → generate_answer()         GPT-4o answers using only retrieved context
+        → run_agent()               agentic detector scores and classifies the answer
+
+Documents must be indexed into ChromaDB via vector_store.build_index()
+before running this pipeline.
 
 Usage
 -----
@@ -23,146 +24,234 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
-from docx import Document
+import re
 
-from .chunker import chunk_document
-from .embedder import embed_chunks, retrieve_top_k
-from .generator import generate_answer
-from agent.hallucination_agent import run_agent as run_gpt4o_agent
-from agent.prometheus_judge import run_prometheus_judge
-from config import CHUNK_SIZE, CHUNK_OVERLAP, RETRIEVAL_TOP_K
+from .vector_store import build_index, retrieve
+from .reranker import rerank
+from .generator import generate_answer_with_citations
+from agent.hallucination_agent import run_agent as run_hallucination_agent
+from config import RETRIEVAL_CANDIDATES, RETRIEVAL_TOP_K, CHROMA_COLLECTION
 
 
-def load_docx(path: str) -> str:
-    """Extract plain text from a .docx file."""
-    doc = Document(path)
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+def _extract_supporting_context(full_response: str) -> str:
+    """
+    Pull the SUPPORTING CONTEXT section from the structured LLM response.
+
+    The response format is:
+        SUPPORTING CONTEXT
+        ------------------
+        [N] "<exact quote from passage N>"
+        ...
+
+        REFERENCES
+        ...
+
+    Returns the supporting context block so the hallucination agent checks
+    the answer against the specific quotes the LLM actually cited — not the
+    full raw chunk text.
+    Falls back to empty string if the section is not found.
+    """
+    match = re.search(
+        r"SUPPORTING CONTEXT\s*[-─]+\s*(.*?)(?=\n\s*(?:REFERENCES|$))",
+        full_response,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_answer_text(full_response: str) -> str:
+    """
+    Pull just the ANSWER section from the structured LLM response.
+
+    The response format is:
+        ANSWER
+        ------
+        <answer text with inline citations>
+
+        SUPPORTING CONTEXT
+        ...
+
+    Returns the answer text only — citations stripped — so the hallucination
+    agent compares clean prose against the retrieved context.
+    """
+    # Match everything between the ANSWER header and the next section header
+    match = re.search(
+        r"ANSWER\s*[-─]+\s*(.*?)(?=\n\s*(?:SUPPORTING CONTEXT|REFERENCES|$))",
+        full_response,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        # Also strip inline citation markers like [1][2]
+        text = match.group(1).strip()
+        text = re.sub(r'\[\d+\]', '', text).strip()
+        return text
+    # Fallback: return the full response if structure not found
+    return full_response
 
 
 def run_rag_pipeline(
-    document: str,
     question: str,
-    chunk_size: int = CHUNK_SIZE,
-    overlap: int = CHUNK_OVERLAP,
+    candidates: int = RETRIEVAL_CANDIDATES,
     top_k: int = RETRIEVAL_TOP_K,
-    judge: str = "prometheus",   # "prometheus" or "gpt4o"
+    collection_name: str = CHROMA_COLLECTION,
+    paper_id_filter: str | None = None,
 ) -> dict:
     """
-    Run the full RAG pipeline on a document and question.
+    Run the full RAG pipeline for a question against the ChromaDB index.
+
+    Two-stage retrieval:
+        Stage 1 — ChromaDB vector search : broad recall  (top candidates)
+        Stage 2 — Cross-encoder rerank   : precision     (top_k final)
 
     Parameters
     ----------
-    document   : full document text to use as the knowledge source
-    question   : user's question
-    chunk_size : words per chunk
-    overlap    : overlapping words between chunks
-    top_k      : number of chunks to retrieve
+    question        : user's question
+    candidates      : chunks to pull from ChromaDB in stage 1 (broad)
+    top_k           : chunks to keep after re-ranking in stage 2 (precise)
+    collection_name : ChromaDB collection to search
+    paper_id_filter : restrict retrieval to a single paper (optional)
 
     Returns
     -------
     dict with keys:
         question             : the input question
-        context              : concatenated top-K chunks used for generation
-        answer               : GPT-4o generated answer
+        context              : numbered context string sent to the LLM
+        answer               : GPT-4o answer with inline [1][2] citations
+        citations            : {1: {paper_id, title, chunk_index, token_start, token_end, text}, ...}
+        retrieved_chunks     : final re-ranked chunks with full citation metadata
         score                : hallucination score (0.0 = grounded, 1.0 = hallucinated)
         is_hallucinated      : bool
-        hallucination_type   : type string (or "none" if grounded)
-        explanation          : plain-English summary from the agent
+        hallucination_type   : type string (or "grounded" if not hallucinated)
+        explanation          : plain-English summary from the judge
         problematic_sentences: list of flagged sentences
-        top_k_chunks         : list of retrieved chunk dicts with similarity scores
     """
 
     print("\n" + "="*60)
     print("RAG PIPELINE")
     print("="*60)
 
-    # ── Step 1: Chunk ──────────────────────────────────────────────
-    print(f"\n[1/5] Chunking document  (chunk_size={chunk_size}, overlap={overlap})")
-    chunks = chunk_document(document, chunk_size=chunk_size, overlap=overlap)
-    print(f"      → {len(chunks)} chunks created")
+    # ── Step 1: Retrieve candidates from ChromaDB ─────────────────
+    print(f"\n[1/4] Stage 1 — ChromaDB vector search (top-{candidates} candidates)")
+    print(f"      Question: \"{question}\"")
+    if paper_id_filter:
+        print(f"      Filter  : paper_id = {paper_id_filter}")
 
-    # ── Step 2: Embed ──────────────────────────────────────────────
-    print(f"\n[2/5] Embedding chunks   (model: all-MiniLM-L6-v2)")
-    embedded = embed_chunks(chunks)
-    print(f"      → {len(embedded)} chunks embedded (dim={embedded[0]['embedding'].shape[0]})")
+    candidate_chunks = retrieve(
+        query=question,
+        top_k=candidates,
+        collection_name=collection_name,
+        paper_id_filter=paper_id_filter,
+    )
 
-    # ── Step 3: Retrieve ───────────────────────────────────────────
-    print(f"\n[3/5] Retrieving top-{top_k} chunks for question:")
-    print(f"      \"{question}\"")
-    top_k_chunks = retrieve_top_k(question, embedded, top_k=top_k)
-    for i, c in enumerate(top_k_chunks):
-        print(f"      [{i+1}] chunk_{c['index']} similarity={c['similarity']:.4f} | {c['text'][:80]}...")
+    if not candidate_chunks:
+        print("      → No chunks found in index.")
+        return {
+            "question": question,
+            "context": "",
+            "answer": "No relevant context found in the index.",
+            "retrieved_chunks": [],
+            "score": 0.0,
+            "is_hallucinated": False,
+            "hallucination_type": "grounded",
+            "explanation": "No chunks retrieved.",
+            "problematic_sentences": [],
+        }
 
-    # ── Step 4: Generate ───────────────────────────────────────────
-    print(f"\n[4/5] Generating answer  (GPT-4o)")
-    answer, context = generate_answer(question, top_k_chunks)
-    print(f"      → Answer: {answer}")
+    print(f"      → {len(candidate_chunks)} candidates retrieved")
+    for i, c in enumerate(candidate_chunks[:3]):
+        print(
+            f"         [{i+1}] sim={c['similarity']:.4f} | "
+            f"{c['paper_id']} chunk_{c['chunk_index']} | "
+            f"{c['text'][:60].strip()}..."
+        )
+    if len(candidate_chunks) > 3:
+        print(f"         ... and {len(candidate_chunks) - 3} more")
 
-    # ── Step 5: Detect hallucination ──────────────────────────────
-    print(f"\n[5/5] Detecting hallucination  (judge={judge})")
-    if judge == "prometheus":
-        result = run_prometheus_judge(question=question, context=context, answer=answer)
-    else:
-        result = run_gpt4o_agent(context=context, answer=answer, question=question)
+    # ── Step 2: Re-rank with cross-encoder ────────────────────────
+    print(f"\n[2/4] Stage 2 — Cross-encoder re-ranking (top-{top_k} final)")
+    retrieved_chunks = rerank(question, candidate_chunks, top_k=top_k)
 
-    print(f"      → Score          : {result.score:.4f}")
-    print(f"      → Hallucinated   : {result.is_hallucinated}")
-    print(f"      → Type           : {result.hallucination_type}")
-    print(f"      → Explanation    : {result.explanation}")
+    for i, c in enumerate(retrieved_chunks):
+        print(
+            f"      [{i+1}] rerank={c['rerank_score']:.4f} | "
+            f"{c['paper_id']} chunk_{c['chunk_index']} | "
+            f"{c['text'][:60].strip()}..."
+        )
+
+    # ── Step 3: Generate answer with citations ────────────────────
+    print(f"\n[3/4] Generating answer with citations (GPT-4o)")
+    answer, context, citations = generate_answer_with_citations(question, retrieved_chunks)
+    print(f"      → {answer[:120]}{'...' if len(answer) > 120 else ''}")
+    print(f"      → {len(citations)} source(s) cited")
+
+    # ── Step 4: Detect hallucination ──────────────────────────────
+    print(f"\n[4/4] Detecting hallucination (GPT-4o agent)")
+    answer_text = _extract_answer_text(answer)
+    supporting_context = _extract_supporting_context(answer)
+    detection_context = supporting_context if supporting_context else context
+    result = run_hallucination_agent(context=detection_context, answer=answer_text, question=question)
+
+    print(f"      → Score        : {result.score:.4f}")
+    print(f"      → Hallucinated : {result.is_hallucinated}")
+    print(f"      → Type         : {result.hallucination_type}")
 
     # ── Summary ────────────────────────────────────────────────────
     print("\n" + "="*60)
     print("RESULT SUMMARY")
     print("="*60)
-    print(f"  Question  : {question}")
-    print(f"  Answer    : {answer}")
-    print(f"  Score     : {result.score:.4f}  ({'HALLUCINATED' if result.is_hallucinated else 'GROUNDED'})")
+    print(f"  Question : {question}")
+    print(f"  Answer   : {answer}")
+    print(f"  Score    : {result.score:.4f}  ({'HALLUCINATED' if result.is_hallucinated else 'GROUNDED'})")
     if result.is_hallucinated:
-        print(f"  Type      : {result.hallucination_type}")
-        print(f"  Sentences : {result.problematic_sentences}")
-    print(f"  Explanation: {result.explanation}")
-    print(f"\n  Context used ({len(top_k_chunks)} chunks):")
-    for i, c in enumerate(top_k_chunks):
-        print(f"    [{i+1}] {c['text'][:100]}...")
+        print(f"  Type     : {result.hallucination_type}")
+        print(f"  Flagged  : {result.problematic_sentences}")
+    print(f"  Explain  : {result.explanation}")
+    print(f"\n  Answer:\n  {answer}")
+    print(f"\n  Citations:")
+    for num, cite in citations.items():
+        print(
+            f"    [{num}] {cite['paper_id']} — {cite['title'][:55]} | "
+            f"chunk {cite['chunk_index']} | tokens {cite['token_start']}–{cite['token_end']}"
+        )
     print("="*60)
 
     return {
         "question":              question,
         "context":               context,
         "answer":                answer,
+        "citations":             citations,
+        "retrieved_chunks":      retrieved_chunks,
         "score":                 result.score,
         "is_hallucinated":       result.is_hallucinated,
         "hallucination_type":    result.hallucination_type,
         "explanation":           result.explanation,
         "problematic_sentences": result.problematic_sentences,
-        "top_k_chunks":          top_k_chunks,
     }
 
 
 if __name__ == "__main__":
-    import os
+    from data.qasper_loader import load_qasper
 
-    docx_path = os.path.join(os.path.dirname(__file__), "..", "..", "RAG-test.docx")
-    document  = load_docx(docx_path)
+    # Ensure index is built
+    documents, qa_pairs = load_qasper(max_papers=5)
+    build_index(documents)
 
-    print(f"Loaded document: {docx_path}")
-    print(f"Words: {len(document.split())}\n")
+    # Pick two real Qasper questions — one answerable, one not
+    answerable   = next(q for q in qa_pairs if q["answerable"])
+    unanswerable = next(q for q in qa_pairs if not q["answerable"])
 
-    question_1 = "What happens after an instructor submits an AI violation form?"
-    question_2 = "What is the penalty for plagiarism at Harvard University?"
-
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--judge", default="prometheus", choices=["prometheus", "gpt4o"],
-                        help="Judge model to use for hallucination detection")
-    args = parser.parse_args()
-
-    print(f"Using judge: {args.judge}\n")
-
-    # Grounded question — answer is in the document
-    run_rag_pipeline(document, question_1, judge=args.judge)
+    # Answerable — should be grounded
+    run_rag_pipeline(
+        question=answerable["question"],
+        paper_id_filter=answerable["paper_id"],
+    )
 
     print("\n\n")
 
-    # Out-of-scope question — answer is NOT in the document
-    run_rag_pipeline(document, question_2, judge=args.judge)
+    # Unanswerable — should flag as hallucination if model invents an answer
+    run_rag_pipeline(
+        question=unanswerable["question"],
+        paper_id_filter=unanswerable["paper_id"],
+    )

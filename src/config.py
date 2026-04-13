@@ -91,10 +91,28 @@ class HallucinationType:
 # ─────────────────────────────────────────────
 # RAG Pipeline Settings (Week 2)
 # ─────────────────────────────────────────────
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"   # HuggingFace sentence-transformers
-RETRIEVAL_TOP_K = 3                      # Number of context chunks to retrieve
-CHUNK_SIZE      = 300                    # Words per context chunk
-CHUNK_OVERLAP   = 50                     # Overlap between consecutive chunks
+EMBEDDING_MODEL       = "all-MiniLM-L6-v2"              # HuggingFace sentence-transformers
+RETRIEVAL_CANDIDATES  = 20                               # First-pass: chunks pulled from ChromaDB (broad recall)
+RETRIEVAL_TOP_K       = 5                                # Final: chunks kept after re-ranking (precision)
+CHUNK_SIZE            = 600                              # Tokens per context chunk (target: 500-800)
+CHUNK_OVERLAP         = 100                              # Overlapping tokens between consecutive chunks
+CHUNK_ENCODING        = "cl100k_base"                    # tiktoken encoding (matches GPT-4 / ada-002)
+
+# ── Re-ranking ─────────────────────────────────────────────────────────────
+RERANKER_MODEL        = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # Offline cross-encoder
+
+# ─────────────────────────────────────────────
+# Qasper Dataset Settings
+# ─────────────────────────────────────────────
+QASPER_SPLIT       = "train"             # HuggingFace split to load ("train" / "validation" / "test")
+QASPER_MAX_PAPERS  = 50                  # Max papers to load (None = full dataset)
+QASPER_CACHE_DIR   = os.path.join(DATA_DIR, "qasper_cache")  # Local HF cache
+
+# ─────────────────────────────────────────────
+# ChromaDB Vector Store Settings
+# ─────────────────────────────────────────────
+CHROMA_DIR        = os.path.join(BASE_DIR, "chroma_db")   # Persistent storage path
+CHROMA_COLLECTION = "qasper_chunks"                        # Collection name
 
 # ─────────────────────────────────────────────
 # Verifier LLM Settings — Azure OpenAI (PRIMARY)
