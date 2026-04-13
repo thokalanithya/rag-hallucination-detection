@@ -17,16 +17,13 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-SAMPLE_DATASET_PATH = os.path.join(DATA_DIR, "sample_dataset.json")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
 # ─────────────────────────────────────────────
 # Hallucination Detection Thresholds
 # ─────────────────────────────────────────────
 # Score range: 0.0 (fully grounded) → 1.0 (full hallucination)
-HALLUCINATION_THRESHOLD = 0.5   # Scores >= this are classified as hallucinated
-PARTIAL_SUPPORT_LOWER  = 0.25   # Between PARTIAL_SUPPORT_LOWER and THRESHOLD = partial
-GROUNDED_UPPER         = 0.25   # Scores < this are considered fully grounded
+HALLUCINATION_THRESHOLD = 0.5   # Scores >= this are classified as hallucinated; scores < this are grounded
 
 # ─────────────────────────────────────────────
 # Hallucination Type Taxonomy
@@ -100,12 +97,14 @@ CHUNK_SIZE      = 300                    # Words per context chunk
 CHUNK_OVERLAP   = 50                     # Overlap between consecutive chunks
 
 # ─────────────────────────────────────────────
-# Verifier LLM Settings (Week 3)
+# Verifier LLM Settings — Azure OpenAI (PRIMARY)
 # ─────────────────────────────────────────────
-VERIFIER_MODEL       = "gpt-4o-mini"
-VERIFIER_TEMPERATURE = 0.0              # Deterministic scoring
-VERIFIER_MAX_TOKENS  = 512
-OPENAI_API_KEY_ENV   = "OPENAI_API_KEY" # Name of the environment variable
+VERIFIER_MODEL            = "gpt-4o"
+VERIFIER_TEMPERATURE      = 0.0              # Deterministic scoring
+VERIFIER_MAX_TOKENS       = 512
+AZURE_API_KEY_ENV         = "AZURE_OPENAI_API_KEY"
+AZURE_ENDPOINT_ENV        = "AZURE_OPENAI_ENDPOINT"
+AZURE_DEPLOYMENT_ENV      = "AZURE_OPENAI_DEPLOYMENT"
 
 # ─────────────────────────────────────────────
 # Dataset Settings
