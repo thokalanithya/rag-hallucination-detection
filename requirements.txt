@@ -21,6 +21,9 @@ pandas==2.2.2
 matplotlib==3.9.0
 seaborn==0.13.2
 
+# ── Web Search Fallback ───────────────────────
+ddgs>=1.0                 # Free web search fallback, no API key required (renamed from duckduckgo-search)
+
 # ── Utilities ─────────────────────────────────
 python-dotenv==1.0.1      # Load OPENAI_API_KEY from .env
 tqdm==4.66.4              # Progress bars
@@ -29,3 +32,7 @@ nltk==3.8.1               # Sentence tokenization (Week 4)
 anthropic>=0.25.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
+
+# ── Week 1 (Qasper): Dataset loading ──────────
+datasets==2.20.0          # HuggingFace datasets — for allenai/qasper (pinned: 3.x+ dropped loading script support)
+chromadb>=1.5.0           # Vector store for Phase 1 dense retrieval

@@ -23,5 +23,11 @@ build/
 .env
 .env.local
 
+# ChromaDB vector store (large binary — rebuild with build_index())
+chroma_db/
+
+# Qasper HuggingFace cache (re-downloads automatically on first run)
+data/qasper_cache/
+
 # OS
 .DS_Store

@@ -28,9 +28,10 @@ import re
 
 from .vector_store import build_index, retrieve
 from .reranker import rerank
-from .generator import generate_answer_with_citations
+from .generator import generate_answer_with_citations, is_insufficient_answer, generate_answer_from_web
+from .web_search import search_web
 from agent.hallucination_agent import run_agent as run_hallucination_agent
-from config import RETRIEVAL_CANDIDATES, RETRIEVAL_TOP_K, CHROMA_COLLECTION
+from config import RETRIEVAL_CANDIDATES, RETRIEVAL_TOP_K, CHROMA_COLLECTION, WEB_SEARCH_MAX_RESULTS
 
 
 def _extract_supporting_context(full_response: str) -> str:
@@ -148,14 +149,17 @@ def run_rag_pipeline(
     if not candidate_chunks:
         print("      → No chunks found in index.")
         return {
-            "question": question,
-            "context": "",
-            "answer": "No relevant context found in the index.",
-            "retrieved_chunks": [],
-            "score": 0.0,
-            "is_hallucinated": False,
-            "hallucination_type": "grounded",
-            "explanation": "No chunks retrieved.",
+            "question":              question,
+            "context":               "",
+            "answer":                "No relevant context found in the index.",
+            "citations":             {},
+            "retrieved_chunks":      [],
+            "source":                "none",
+            "web_citations":         {},
+            "score":                 0.0,
+            "is_hallucinated":       False,
+            "hallucination_type":    "grounded",
+            "explanation":           "No chunks retrieved.",
             "problematic_sentences": [],
         }
 
@@ -185,6 +189,30 @@ def run_rag_pipeline(
     answer, context, citations = generate_answer_with_citations(question, retrieved_chunks)
     print(f"      → {answer[:120]}{'...' if len(answer) > 120 else ''}")
     print(f"      → {len(citations)} source(s) cited")
+
+    # ── Step 3b: Web search fallback ──────────────────────────────
+    source = "rag"
+    web_citations = {}
+
+    if is_insufficient_answer(answer):
+        print(f"\n[3b] Insufficient RAG context — falling back to DuckDuckGo web search")
+        try:
+            web_results = search_web(question, max_results=WEB_SEARCH_MAX_RESULTS)
+            if web_results:
+                print(f"      → {len(web_results)} web result(s) retrieved")
+                for r in web_results:
+                    print(f"         [{r['number']}] {r['title'][:60]} | {r['url'][:60]}")
+                answer, web_citations = generate_answer_from_web(question, web_results)
+                source = "web"
+                context = "\n\n".join(
+                    f"[{r['number']}] {r['snippet']}" for r in web_results
+                )
+                citations = {}
+                print(f"      → Web answer: {answer[:120]}{'...' if len(answer) > 120 else ''}")
+            else:
+                print(f"      → Web search returned no results. Keeping original response.")
+        except Exception as e:
+            print(f"      → Web search failed: {e}. Keeping original response.")
 
     # ── Step 4: Detect hallucination ──────────────────────────────
     print(f"\n[4/4] Detecting hallucination (GPT-4o agent)")
@@ -223,6 +251,8 @@ def run_rag_pipeline(
         "answer":                answer,
         "citations":             citations,
         "retrieved_chunks":      retrieved_chunks,
+        "source":                source,
+        "web_citations":         web_citations,
         "score":                 result.score,
         "is_hallucinated":       result.is_hallucinated,
         "hallucination_type":    result.hallucination_type,

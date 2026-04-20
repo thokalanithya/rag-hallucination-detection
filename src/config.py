@@ -130,3 +130,46 @@ AZURE_DEPLOYMENT_ENV      = "AZURE_OPENAI_DEPLOYMENT"
 DATASET_VERSION = "1.0"
 MIN_CONTEXT_WORDS = 30    # Minimum words a valid context chunk must have
 MIN_ANSWER_WORDS  = 5     # Minimum words a valid answer must have
+
+# ─────────────────────────────────────────────
+# Web Search Fallback Settings (DuckDuckGo)
+# ─────────────────────────────────────────────
+WEB_SEARCH_MAX_RESULTS = 5    # number of results to return after filtering
+
+# Trusted domains — only results from these sites are kept.
+# Fetches WEB_SEARCH_MAX_RESULTS * WEB_SEARCH_FETCH_MULTIPLIER candidates
+# from DuckDuckGo and then filters down to the whitelist.
+WEB_SEARCH_FETCH_MULTIPLIER = 4   # fetch 4x more to have enough after filtering
+
+WEB_SEARCH_TRUSTED_DOMAINS = [
+    # ── Encyclopedic / General knowledge ──────
+    "wikipedia.org",
+    "britannica.com",
+
+    # ── Academic preprints & papers ───────────
+    "arxiv.org",
+    "semanticscholar.org",
+    "researchgate.net",
+    "scholar.google.com",
+
+    # ── Publishers & journals ─────────────────
+    "nature.com",
+    "science.org",
+    "sciencedirect.com",
+    "springer.com",
+    "ieee.org",
+    "acm.org",
+    "pubmed.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov",
+    "nih.gov",
+    "plos.org",
+    "frontiersin.org",
+
+    # ── Technical documentation ───────────────
+    "docs.python.org",
+    "pytorch.org",
+    "tensorflow.org",
+    "huggingface.co",
+    "github.com",
+    "readthedocs.io",
+]
