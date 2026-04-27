@@ -134,42 +134,12 @@ MIN_ANSWER_WORDS  = 5     # Minimum words a valid answer must have
 # ─────────────────────────────────────────────
 # Web Search Fallback Settings (DuckDuckGo)
 # ─────────────────────────────────────────────
-WEB_SEARCH_MAX_RESULTS = 5    # number of results to return after filtering
+WEB_SEARCH_MAX_RESULTS      = 5     # results to return after scoring
+WEB_SEARCH_FETCH_MULTIPLIER = 6     # fetch 6x more candidates so there's enough after filtering
+WEB_SEARCH_MIN_TRUST_SCORE  = 0.35  # drop results below this score (0.0–1.0)
 
-# Trusted domains — only results from these sites are kept.
-# Fetches WEB_SEARCH_MAX_RESULTS * WEB_SEARCH_FETCH_MULTIPLIER candidates
-# from DuckDuckGo and then filters down to the whitelist.
-WEB_SEARCH_FETCH_MULTIPLIER = 4   # fetch 4x more to have enough after filtering
-
-WEB_SEARCH_TRUSTED_DOMAINS = [
-    # ── Encyclopedic / General knowledge ──────
-    "wikipedia.org",
-    "britannica.com",
-
-    # ── Academic preprints & papers ───────────
-    "arxiv.org",
-    "semanticscholar.org",
-    "researchgate.net",
-    "scholar.google.com",
-
-    # ── Publishers & journals ─────────────────
-    "nature.com",
-    "science.org",
-    "sciencedirect.com",
-    "springer.com",
-    "ieee.org",
-    "acm.org",
-    "pubmed.ncbi.nlm.nih.gov",
-    "ncbi.nlm.nih.gov",
-    "nih.gov",
-    "plos.org",
-    "frontiersin.org",
-
-    # ── Technical documentation ───────────────
-    "docs.python.org",
-    "pytorch.org",
-    "tensorflow.org",
-    "huggingface.co",
-    "github.com",
-    "readthedocs.io",
-]
+# ── Tranco domain-rank cache ───────────────────────────────────────────────
+# The Tranco list (~1M domains) is downloaded once and stored locally.
+# Set OPENPAGE_RANK_API_KEY in .env for an additional authority signal (optional).
+TRANCO_CACHE_PATH         = os.path.join(DATA_DIR, "tranco_cache", "tranco.json")
+TRANCO_CACHE_MAX_AGE_DAYS = 7       # re-download after this many days

@@ -93,7 +93,16 @@ SUPPORTING CONTEXT
 For each citation used, quote the exact sentence(s) from the passage that support your answer:
 [N] "<exact quote from passage N>"
 
-"""
+REFERENCES
+----------
+[N] "<title>," arXiv preprint arXiv:<paper_id>, sec. <chunk_index>.
+
+---
+
+Context passages:
+{context}
+
+Question: {question}"""
 
 
 # def generate_answer(question: str, top_k_chunks: list[dict]) -> tuple[str, str]:
@@ -148,26 +157,26 @@ def generate_answer_with_citations(
         citations : dict mapping citation number (int) to chunk metadata:
                     {1: {paper_id, title, chunk_index, token_start, token_end, text}, ...}
     """
-    # Build numbered context block and citation map in one pass
+    # Group chunks by paper_id (preserving first-appearance order),
+    # then build one numbered context entry per paper with merged text.
+    from collections import OrderedDict
+    papers: OrderedDict = OrderedDict()
+    for chunk in top_k_chunks:
+        pid = chunk["paper_id"]
+        if pid not in papers:
+            papers[pid] = {"paper_id": pid, "title": chunk["title"], "chunks": []}
+        papers[pid]["chunks"].append(chunk)
+
     context_parts = []
     citations = {}
 
-    for number, chunk in enumerate(top_k_chunks, start=1):
-        header = (
-            f"[{number}] Source: {chunk['paper_id']} — "
-            f"{chunk['title'][:60]} | "
-            f"chunk {chunk['chunk_index']} | "
-            f"tokens {chunk['token_start']}–{chunk['token_end']}"
-        )
-        context_parts.append(f"{header}\n{chunk['text'].strip()}")
-
+    for number, paper in enumerate(papers.values(), start=1):
+        merged_text = "\n\n".join(c["text"].strip() for c in paper["chunks"])
+        header = f"[{number}] Source: {paper['paper_id']} — {paper['title'][:60]}"
+        context_parts.append(f"{header}\n{merged_text}")
         citations[number] = {
-            "paper_id":    chunk["paper_id"],
-            "title":       chunk["title"],
-            "chunk_index": chunk["chunk_index"],
-            "token_start": chunk["token_start"],
-            "token_end":   chunk["token_end"],
-            "text":        chunk["text"],
+            "paper_id": paper["paper_id"],
+            "title":    paper["title"],
         }
 
     context = "\n\n".join(context_parts)
@@ -180,6 +189,19 @@ def generate_answer_with_citations(
         max_tokens=1500,
     )
     answer = response.choices[0].message.content.strip()
+
+    # Renumber citations sequentially from 1 using only what the LLM actually cited.
+    import re as _re
+    used = sorted({int(m) for m in _re.findall(r'\[(\d+)\]', answer)})
+    if used != list(range(1, len(used) + 1)):
+        remap = {old: new for new, old in enumerate(used, start=1)}
+        # Replace in answer text (use placeholder to avoid double-replacing)
+        def _sub(m):
+            return f"[\u00ab{remap[int(m.group(1))]}\u00bb]"
+        answer = _re.sub(r'\[(\d+)\]', _sub, answer)
+        answer = answer.replace("[\u00ab", "[").replace("\u00bb]", "]")
+        citations = {remap[old]: citations[old] for old in used if old in citations}
+
     return answer, context, citations
 
 

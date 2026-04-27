@@ -23,6 +23,8 @@ seaborn==0.13.2
 
 # ── Web Search Fallback ───────────────────────
 ddgs>=1.0                 # Free web search fallback, no API key required (renamed from duckduckgo-search)
+requests>=2.31.0          # HTTP client for Tranco list download and OpenPageRank API
+tldextract>=5.1.1         # Accurate registered-domain extraction (handles co.uk, ac.in, etc.)
 
 # ── Utilities ─────────────────────────────────
 python-dotenv==1.0.1      # Load OPENAI_API_KEY from .env
@@ -36,3 +38,11 @@ scikit-learn>=1.3.0
 # ── Week 1 (Qasper): Dataset loading ──────────
 datasets==2.20.0          # HuggingFace datasets — for allenai/qasper (pinned: 3.x+ dropped loading script support)
 chromadb>=1.5.0           # Vector store for Phase 1 dense retrieval
+
+# ── Web UI ─────────────────────────────────────────────────────
+fastapi>=0.111.0          # API server
+uvicorn[standard]>=0.29.0 # ASGI server
+aiofiles>=23.0.0          # Static file serving
+
+# ── Document Ingestion ──────────────────────────────────────────
+python-pptx>=0.6.23       # Extract text from PowerPoint files

@@ -98,6 +98,7 @@ def run_rag_pipeline(
     top_k: int = RETRIEVAL_TOP_K,
     collection_name: str = CHROMA_COLLECTION,
     paper_id_filter: str | None = None,
+    status_callback=None,
 ) -> dict:
     """
     Run the full RAG pipeline for a question against the ChromaDB index.
@@ -120,7 +121,7 @@ def run_rag_pipeline(
         question             : the input question
         context              : numbered context string sent to the LLM
         answer               : GPT-4o answer with inline [1][2] citations
-        citations            : {1: {paper_id, title, chunk_index, token_start, token_end, text}, ...}
+        citations            : {1: {paper_id, title}, ...}  (one entry per unique paper)
         retrieved_chunks     : final re-ranked chunks with full citation metadata
         score                : hallucination score (0.0 = grounded, 1.0 = hallucinated)
         is_hallucinated      : bool
@@ -128,6 +129,10 @@ def run_rag_pipeline(
         explanation          : plain-English summary from the judge
         problematic_sentences: list of flagged sentences
     """
+
+    def _emit(event_type: str, message: str, data=None):
+        if status_callback:
+            status_callback(event_type, message, data)
 
     print("\n" + "="*60)
     print("RAG PIPELINE")
@@ -139,6 +144,7 @@ def run_rag_pipeline(
     if paper_id_filter:
         print(f"      Filter  : paper_id = {paper_id_filter}")
 
+    _emit("status", "Searching knowledge base...")
     candidate_chunks = retrieve(
         query=question,
         top_k=candidates,
@@ -175,6 +181,7 @@ def run_rag_pipeline(
 
     # ── Step 2: Re-rank with cross-encoder ────────────────────────
     print(f"\n[2/4] Stage 2 — Cross-encoder re-ranking (top-{top_k} final)")
+    _emit("status", "Re-ranking results...")
     retrieved_chunks = rerank(question, candidate_chunks, top_k=top_k)
 
     for i, c in enumerate(retrieved_chunks):
@@ -186,6 +193,7 @@ def run_rag_pipeline(
 
     # ── Step 3: Generate answer with citations ────────────────────
     print(f"\n[3/4] Generating answer with citations (GPT-4o)")
+    _emit("status", "Generating answer from knowledge base...")
     answer, context, citations = generate_answer_with_citations(question, retrieved_chunks)
     print(f"      → {answer[:120]}{'...' if len(answer) > 120 else ''}")
     print(f"      → {len(citations)} source(s) cited")
@@ -196,12 +204,13 @@ def run_rag_pipeline(
 
     if is_insufficient_answer(answer):
         print(f"\n[3b] Insufficient RAG context — falling back to DuckDuckGo web search")
+        _emit("web_fallback", "Did not find information in store, searching the web...")
         try:
             web_results = search_web(question, max_results=WEB_SEARCH_MAX_RESULTS)
             if web_results:
                 print(f"      → {len(web_results)} web result(s) retrieved")
                 for r in web_results:
-                    print(f"         [{r['number']}] {r['title'][:60]} | {r['url'][:60]}")
+                    print(f"         [{r['number']}] trust={r.get('trust_score', 0):.2f} | {r['title'][:50]} | {r['url'][:55]}")
                 answer, web_citations = generate_answer_from_web(question, web_results)
                 source = "web"
                 context = "\n\n".join(
@@ -216,6 +225,7 @@ def run_rag_pipeline(
 
     # ── Step 4: Detect hallucination ──────────────────────────────
     print(f"\n[4/4] Detecting hallucination (GPT-4o agent)")
+    _emit("status", "Checking for hallucinations...")
     answer_text = _extract_answer_text(answer)
     supporting_context = _extract_supporting_context(answer)
     detection_context = supporting_context if supporting_context else context
@@ -239,10 +249,7 @@ def run_rag_pipeline(
     print(f"\n  Answer:\n  {answer}")
     print(f"\n  Citations:")
     for num, cite in citations.items():
-        print(
-            f"    [{num}] {cite['paper_id']} — {cite['title'][:55]} | "
-            f"chunk {cite['chunk_index']} | tokens {cite['token_start']}–{cite['token_end']}"
-        )
+        print(f"    [{num}] {cite['paper_id']} — {cite['title'][:55]}")
     print("="*60)
 
     return {
