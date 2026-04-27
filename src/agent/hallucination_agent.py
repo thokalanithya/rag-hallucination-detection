@@ -136,12 +136,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "keyword_overlap",
             "description": (
-                "Compute token-level F1 word overlap between the answer (or a sentence) "
-                "and the context. Catches factual substitutions that cosine similarity "
-                "misses — e.g. 'Mumbai' vs 'Delhi'. "
-                "Returns f1 score, precision, recall, and missing_tokens (words in the "
-                "answer that are absent from the context). "
-                "Call this on the full answer and on any suspicious sentence."
+                "Supplementary sanity check. Compute token-level F1 word overlap between "
+                "the full answer and the context. Catches gross entity substitutions that "
+                "semantic similarity misses — e.g. 'Mumbai' vs 'Delhi'. "
+                "Returns f1 score, precision, recall, and missing_tokens. "
+                "Call once on the full answer only — not per-sentence. "
+                "Treat missing_tokens as a hint to investigate, not as proof of hallucination."
             ),
             "parameters": {
                 "type": "object",
@@ -158,10 +158,10 @@ TOOLS: list[dict] = [
         "function": {
             "name": "find_in_context",
             "description": (
-                "Search for a specific claim, entity, name, number, or phrase directly "
-                "inside the context using exact, token, and fuzzy matching. "
-                "Use this to verify individual facts extracted from the answer — "
-                "especially names, numbers, and dates. "
+                "String lookup for a single atomic fact inside the context. "
+                "Call ONLY on individual claims returned by extract_claims — "
+                "one specific number, one proper name, one date per call. "
+                "Do NOT pass phrases, ranges, or paraphrase words. "
                 "Returns found=True/False, match_type, and a context snippet."
             ),
             "parameters": {
@@ -179,11 +179,12 @@ TOOLS: list[dict] = [
         "function": {
             "name": "check_sentence_support",
             "description": (
-                "Compute semantic (embedding) similarity between a sentence and the context. "
-                "Returns support_score [0.0, 1.0] and signal: "
-                "'supported' (≥0.65), 'low_support' (0.40–0.65), 'no_support' (<0.40). "
-                "Use alongside keyword_overlap — similarity captures topic-level alignment, "
-                "keyword_overlap catches word-level mismatches."
+                "PRIMARY grounding check. Compute semantic similarity between a sentence "
+                "and the context. Returns support_score [0.0, 1.0] and signal: "
+                "'supported' (≥0.65) — sentence is grounded, no further checks needed; "
+                "'low_support' (0.40–0.65) — borderline, verify specific facts; "
+                "'no_support' (<0.40) — likely unsupported, verify specific facts. "
+                "Call on every sentence before any other per-sentence tool."
             ),
             "parameters": {
                 "type": "object",
@@ -200,10 +201,10 @@ TOOLS: list[dict] = [
         "function": {
             "name": "extract_claims",
             "description": (
-                "Extract verifiable facts (numbers, percentages, dates, names, citations, "
-                "p-values) from a sentence. Call this after keyword_overlap or "
-                "check_sentence_support returns a low/suspicious score, then use "
-                "find_in_context to verify each extracted claim against the context."
+                "Extract individual atomic verifiable facts (numbers, percentages, dates, "
+                "proper names, citations, p-values) from a sentence. "
+                "Call ONLY on sentences that scored below 0.65 in check_sentence_support. "
+                "Each returned item is one atomic claim to pass separately to find_in_context."
             ),
             "parameters": {
                 "type": "object",
@@ -255,60 +256,59 @@ You have FIVE tools that provide evidence. You do ALL the reasoning yourself.
 1. split_sentences(text)
    → Split answer into sentences. Call FIRST, always.
 
-2. keyword_overlap(answer, context)
-   → Token-level F1 word overlap. CRITICAL for catching factual substitutions
-     (e.g. "Mumbai" vs "Delhi") that semantic similarity misses.
-   → Returns: f1, precision, recall, missing_tokens (words in answer absent from context).
-   → Call on the FULL answer, then on any sentence with missing tokens.
+2. check_sentence_support(sentence, context)
+   → Semantic similarity score [0.0–1.0]. PRIMARY gate for every sentence.
+   → signal: "supported" (≥0.65), "low_support" (0.40–0.65), "no_support" (<0.40).
+   → Call on EVERY sentence. The result determines whether deeper checks run.
 
-3. find_in_context(claim, context)
-   → Direct lookup: does this specific fact/entity/number exist in the context?
-   → Returns: found=True/False, match_type, context_snippet.
-   → Call for EVERY specific claim extracted from the answer — names, numbers, dates.
+3. extract_claims(sentence)
+   → Pull out atomic verifiable facts: numbers, proper names, dates, percentages,
+     citations. Each is returned as a separate item.
+   → Call ONLY on sentences that scored below 0.65 in check_sentence_support.
 
-4. check_sentence_support(sentence, context)
-   → Semantic (embedding) similarity score [0.0–1.0].
-   → Catches topic-level drift and paraphrase errors.
-   → Use alongside keyword_overlap, not instead of it.
+4. find_in_context(claim, context)
+   → String lookup: does this exact fact exist in the context?
+   → Call ONLY on individual atomic claims from extract_claims — one claim per call.
+   → NEVER call it on a phrase, a range, or a paraphrase word.
 
-5. extract_claims(sentence)
-   → Pull out verifiable facts (numbers, names, dates, citations) from a sentence.
-   → Call on any suspicious sentence, then verify each claim with find_in_context.
+5. keyword_overlap(answer, context)
+   → Token-level F1. Use as a supplementary sanity check on the full answer only.
+   → Helps spot gross entity substitutions (Mumbai vs Delhi). Do not use per-sentence.
 
 ─── RECOMMENDED WORKFLOW ────────────────────────────────────────────
 Step 1: split_sentences(answer)
-Step 2: keyword_overlap(full_answer, context)  ← run on full answer first
-Step 3: For each sentence → check_sentence_support(sentence, context)
-Step 4: For any sentence with low similarity (low_support or no_support):
-          → extract_claims(sentence)          ← pull out specific facts only
-          → find_in_context(each_claim, context)   ← verify each specific fact
-Step 5: Reason over ALL evidence → emit final JSON verdict
+Step 2: For EACH sentence → check_sentence_support(sentence, context)
+          ● score ≥ 0.65 ("supported") → sentence is GROUNDED. Stop here for this sentence.
+          ● score 0.40–0.65 ("low_support") → run Steps 3–4 on this sentence.
+          ● score < 0.40 ("no_support") → run Steps 3–4 on this sentence.
+Step 3: extract_claims(sentence)  ← only for sentences below 0.65
+Step 4: find_in_context(claim, context)  ← one call per atomic claim from Step 3
+Step 5: keyword_overlap(full_answer, context)  ← optional sanity check on the whole answer
+Step 6: Reason over ALL evidence → emit final JSON verdict
 
 ─── CRITICAL REASONING RULES ────────────────────────────────────────
-★ keyword_overlap missing_tokens matter ONLY for specific entities.
-  If a SPECIFIC ENTITY — a proper name, number, date, percentage, citation —
-  appears in the answer but NOT in context, that is strong evidence of
-  hallucination. Use find_in_context to confirm those specific tokens.
-  Do NOT treat general vocabulary words or paraphrases as hallucination
-  signals just because they are absent from missing_tokens. A word like
-  "polarity" or "accuracy" may validly paraphrase a concept in the context
-  even if that exact token is missing.
+★ check_sentence_support ≥ 0.65 = GROUNDED. Do not override it.
+  If a sentence scores "supported", it is semantically aligned with the context.
+  The LLM always paraphrases — "surgical details" means the same as "how far
+  from the tumor is cut during surgery." Do NOT call find_in_context on
+  supported sentences. Do NOT flag paraphrase as overgeneralization.
 
-★ High semantic similarity does NOT mean grounded.
-  A wrong city name (Mumbai vs Delhi) will still score ~0.7 similarity
-  because both are cities. Always cross-check with keyword_overlap for
-  specific named entities.
+★ find_in_context verifies ATOMIC facts only — never phrases or ranges.
+  Extract individual atoms from extract_claims first, then check each one.
+  "0.556" and "0.731" are valid individual claims to check.
+  "0.556 to 0.731" is a paraphrased range — do NOT pass it to find_in_context.
+  "leveraging" is a paraphrase verb — do NOT pass it to find_in_context.
 
-★ find_in_context is for verifying specific extracted claims ONLY.
-  Call it on facts returned by extract_claims (numbers, proper names, dates,
-  citations). Do NOT call it on every word in missing_tokens — most missing
-  words are legitimate paraphrases. If found=False for a specific verifiable
-  fact (name, number, date) → classify that claim as fabricated or contradicting.
+★ A sentence needs BOTH low semantic support AND a missing specific fact
+  to be classified as hallucinated.
+  Low similarity alone → possible paraphrase, not hallucination.
+  Missing specific fact alone on a supported sentence → not hallucination.
+  Low similarity + find_in_context(specific_fact) = False → hallucination.
 
-★ check_sentence_support is your primary signal for general sentences.
-  A sentence with support_score ≥ 0.65 is considered supported unless a
-  specific entity within it fails find_in_context. A sentence with
-  support_score < 0.40 and no matching specific claims is unsupported.
+★ keyword_overlap missing_tokens are background signal only.
+  Most missing tokens are paraphrase words. Only treat a missing token as
+  suspicious if it is a proper name, number, or date AND the sentence already
+  scored below 0.65 in check_sentence_support.
 
 ★ Short answers need extra care.
   A one-word answer that does not appear in context = hallucinated.
