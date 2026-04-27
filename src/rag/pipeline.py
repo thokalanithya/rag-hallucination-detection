@@ -34,34 +34,6 @@ from agent.hallucination_agent import run_agent as run_hallucination_agent
 from config import RETRIEVAL_CANDIDATES, RETRIEVAL_TOP_K, CHROMA_COLLECTION, WEB_SEARCH_MAX_RESULTS
 
 
-def _extract_supporting_context(full_response: str) -> str:
-    """
-    Pull the SUPPORTING CONTEXT section from the structured LLM response.
-
-    The response format is:
-        SUPPORTING CONTEXT
-        ------------------
-        [N] "<exact quote from passage N>"
-        ...
-
-        REFERENCES
-        ...
-
-    Returns the supporting context block so the hallucination agent checks
-    the answer against the specific quotes the LLM actually cited — not the
-    full raw chunk text.
-    Falls back to empty string if the section is not found.
-    """
-    match = re.search(
-        r"SUPPORTING CONTEXT\s*[-─]+\s*(.*?)(?=\n\s*(?:REFERENCES|$))",
-        full_response,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if match:
-        return match.group(1).strip()
-    return ""
-
-
 def _extract_answer_text(full_response: str) -> str:
     """
     Pull just the ANSWER section from the structured LLM response.
@@ -227,9 +199,9 @@ def run_rag_pipeline(
     print(f"\n[4/4] Detecting hallucination (GPT-4o agent)")
     _emit("status", "Checking for hallucinations...")
     answer_text = _extract_answer_text(answer)
-    supporting_context = _extract_supporting_context(answer)
-    detection_context = supporting_context if supporting_context else context
-    result = run_hallucination_agent(context=detection_context, answer=answer_text, question=question)
+    # Always use the full retrieved context so the agent verifies claims against
+    # the complete source material, not just the LLM's own cherry-picked quotes.
+    result = run_hallucination_agent(context=context, answer=answer_text, question=question)
 
     print(f"      → Score        : {result.score:.4f}")
     print(f"      → Hallucinated : {result.is_hallucinated}")

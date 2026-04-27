@@ -279,23 +279,36 @@ You have FIVE tools that provide evidence. You do ALL the reasoning yourself.
 Step 1: split_sentences(answer)
 Step 2: keyword_overlap(full_answer, context)  ← run on full answer first
 Step 3: For each sentence → check_sentence_support(sentence, context)
-Step 4: For any sentence with missing_tokens or low similarity:
-          → extract_claims(sentence)
-          → find_in_context(each_claim, context)
+Step 4: For any sentence with low similarity (low_support or no_support):
+          → extract_claims(sentence)          ← pull out specific facts only
+          → find_in_context(each_claim, context)   ← verify each specific fact
 Step 5: Reason over ALL evidence → emit final JSON verdict
 
 ─── CRITICAL REASONING RULES ────────────────────────────────────────
-★ keyword_overlap missing_tokens are your STRONGEST signal.
-  If a specific entity or number appears in the answer but NOT in context,
-  it is almost certainly hallucinated — use find_in_context to confirm.
+★ keyword_overlap missing_tokens matter ONLY for specific entities.
+  If a SPECIFIC ENTITY — a proper name, number, date, percentage, citation —
+  appears in the answer but NOT in context, that is strong evidence of
+  hallucination. Use find_in_context to confirm those specific tokens.
+  Do NOT treat general vocabulary words or paraphrases as hallucination
+  signals just because they are absent from missing_tokens. A word like
+  "polarity" or "accuracy" may validly paraphrase a concept in the context
+  even if that exact token is missing.
 
 ★ High semantic similarity does NOT mean grounded.
   A wrong city name (Mumbai vs Delhi) will still score ~0.7 similarity
-  because both are cities. Always cross-check with keyword_overlap.
+  because both are cities. Always cross-check with keyword_overlap for
+  specific named entities.
 
-★ find_in_context is the ground truth check.
-  If found=False for a specific name, number, or date → that claim is
-  fabricated or contradicting. Classify accordingly.
+★ find_in_context is for verifying specific extracted claims ONLY.
+  Call it on facts returned by extract_claims (numbers, proper names, dates,
+  citations). Do NOT call it on every word in missing_tokens — most missing
+  words are legitimate paraphrases. If found=False for a specific verifiable
+  fact (name, number, date) → classify that claim as fabricated or contradicting.
+
+★ check_sentence_support is your primary signal for general sentences.
+  A sentence with support_score ≥ 0.65 is considered supported unless a
+  specific entity within it fails find_in_context. A sentence with
+  support_score < 0.40 and no matching specific claims is unsupported.
 
 ★ Short answers need extra care.
   A one-word answer that does not appear in context = hallucinated.
@@ -415,9 +428,14 @@ def run_agent(
                 problematic_sentences = verdict.get("problematic_sentences", [])
                 reasoning             = verdict.get("reasoning", "")
                 explanation           = verdict.get("explanation", explanation)
-                # Honour is_hallucinated from verdict if score is ambiguous
-                if not verdict.get("is_hallucinated", score >= THRESHOLD):
+                # Reconcile score with is_hallucinated so both agree.
+                # If is_hallucinated=False but score is high, cap it down.
+                # If is_hallucinated=True but score is low, bump it up.
+                is_hall = verdict.get("is_hallucinated", score >= THRESHOLD)
+                if not is_hall and score >= THRESHOLD:
                     score = min(score, THRESHOLD - 0.01)
+                elif is_hall and score < THRESHOLD:
+                    score = max(score, THRESHOLD)
             except (json.JSONDecodeError, ValueError):
                 pass  # use defaults
 
