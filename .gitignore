@@ -25,6 +25,8 @@ build/
 
 # ChromaDB vector store (large binary — rebuild with build_index())
 chroma_db/
+data/
+logs/
 
 # Qasper HuggingFace cache (re-downloads automatically on first run)
 data/qasper_cache/

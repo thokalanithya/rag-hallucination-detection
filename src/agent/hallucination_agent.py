@@ -65,17 +65,6 @@ from data.halueval_loader import load_halueval_qa
 from tools import split_sentences, check_sentence_support, extract_claims, find_in_context
 from config import HallucinationType
 
-# ── Hallucination taxonomy ────────────────────────────────────────────────────
-
-HALLUCINATION_TYPES = [
-    "unsupported",        # info not in context
-    "contradicting",      # directly contradicts context
-    "fabricated",         # invented names / numbers / citations
-    "overgeneralization", # broader than context supports
-    "partial",            # part grounded, extra details invented
-    "none",               # not hallucinated
-]
-
 THRESHOLD = 0.5
 
 

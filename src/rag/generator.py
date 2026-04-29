@@ -3,11 +3,6 @@ generator.py
 ------------
 Generates answers from top-K retrieved chunks using GPT-4o (Azure OpenAI).
 
-Two functions:
-    generate_answer()               — plain answer, no citations
-    generate_answer_with_citations()— answer with inline [1][2] citations
-                                      + structured citation map
-
 Pipeline position:
     retrieve() → rerank() → generate_answer_with_citations()
 
@@ -103,33 +98,6 @@ Context passages:
 {context}
 
 Question: {question}"""
-
-
-# def generate_answer(question: str, top_k_chunks: list[dict]) -> tuple[str, str]:
-#     """
-#     Generate an answer from the top-K retrieved chunks.
-
-#     Parameters
-#     ----------
-#     question      : the user's question
-#     top_k_chunks  : output of retrieve_top_k() — list of chunk dicts with 'text' field
-
-#     Returns
-#     -------
-#     (answer, context)
-#         answer  : GPT-4o's generated answer
-#         context : the concatenated top-K chunk texts used as input
-#     """
-#     context  = "\n\n".join(c["text"] for c in top_k_chunks)
-#     prompt   = ANSWER_PROMPT.format(context=context, question=question)
-#     response = _client.chat.completions.create(
-#         model=_model,
-#         messages=[{"role": "user", "content": prompt}],
-#         temperature=0.0,
-#         max_tokens=512,
-#     )
-#     answer = response.choices[0].message.content.strip()
-#     return answer, context
 
 
 def generate_answer_with_citations(
@@ -267,42 +235,3 @@ def generate_answer_from_web(
     return answer, web_citations
 
 
-if __name__ == "__main__":
-    from rag.chunker import chunk_document
-    from rag.embedder import embed_chunks, retrieve_top_k
-
-    document = """
-    Photosynthesis is the process by which green plants, algae, and some bacteria
-    convert light energy into chemical energy stored in glucose. This process occurs
-    primarily in the chloroplasts, which contain a green pigment called chlorophyll.
-    Chlorophyll absorbs sunlight — mostly in the red and blue wavelengths — and uses
-    that energy to drive a series of chemical reactions. The overall equation for
-    photosynthesis is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. This means plants
-    take in carbon dioxide and water, and with the help of sunlight, produce glucose
-    and release oxygen as a byproduct. The glucose produced is used by the plant as
-    an energy source for growth, reproduction, and other metabolic processes. Without
-    photosynthesis, most life on Earth would not be possible, as it forms the base of
-    nearly all food chains and is responsible for the oxygen in our atmosphere.
-    Photosynthesis occurs in two main stages: the light-dependent reactions and the
-    light-independent reactions (Calvin cycle). In the light-dependent reactions,
-    sunlight is used to split water molecules and generate ATP and NADPH. In the Calvin
-    cycle, these energy carriers are used to fix carbon dioxide into organic molecules.
-    """
-
-    question = "How do plants produce glucose?"
-
-    print(f"Question: {question}\n")
-
-    chunks   = chunk_document(document, chunk_size=50, overlap=10)
-    embedded = embed_chunks(chunks)
-    top_k    = retrieve_top_k(question, embedded, top_k=3)
-
-    print("Retrieved context chunks:")
-    for i, c in enumerate(top_k):
-        print(f"  [{i+1}] (similarity={c['similarity']:.4f}) {c['text'][:100]}...")
-
-    print("\nGenerating answer...\n")
-    answer, context = generate_answer(question, top_k)
-
-    print(f"Answer:\n{answer}")
-    print(f"\nContext used:\n{context}")

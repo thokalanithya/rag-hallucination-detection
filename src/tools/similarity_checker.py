@@ -35,66 +35,12 @@ def _get_model():
     return _model
 
 
-# ── NLI CrossEncoder singleton ────────────────────────────────────────────────
-_nli_model = None
-_NLI_MODEL_NAME = "cross-encoder/nli-deberta-v3-small"
-# Label order for nli-deberta-v3-small: contradiction=0, entailment=1, neutral=2
-_NLI_ENTAILMENT_IDX = 1
-
-
-def _get_nli_model():
-    global _nli_model
-    if _nli_model is None:
-        try:
-            from sentence_transformers import CrossEncoder
-            _nli_model = CrossEncoder(_NLI_MODEL_NAME)
-        except ImportError:
-            raise ImportError(
-                "sentence-transformers is required. "
-                "Run: pip install sentence-transformers"
-            )
-    return _nli_model
-
-
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     """Cosine similarity between two 1-D vectors."""
     denom = (np.linalg.norm(a) * np.linalg.norm(b))
     if denom == 0:
         return 0.0
     return float(np.dot(a, b) / denom)
-
-
-def check_nli_entailment(sentence: str, context: str) -> float:
-    """
-    Compute the probability that *context* entails *sentence* using an NLI
-    cross-encoder (cross-encoder/nli-deberta-v3-small).
-
-    Unlike the bi-encoder cosine similarity (which encodes texts independently),
-    the cross-encoder reads (context, sentence) jointly, so it can find supporting
-    evidence in any chunk of the context regardless of irrelevant surrounding text.
-
-    Parameters
-    ----------
-    sentence : A single sentence from the generated answer.
-    context  : The full retrieved context passage.
-
-    Returns
-    -------
-    float [0.0, 1.0] — probability that the context entails the sentence.
-    """
-    sentence = sentence.strip()
-    context  = context.strip()
-
-    if not sentence or not context:
-        return 0.0
-
-    model  = _get_nli_model()
-    logits = model.predict([(context, sentence)])[0]  # shape: (3,)
-
-    # Numerically stable softmax → probability for each label
-    exp_l = np.exp(logits - np.max(logits))
-    probs  = exp_l / exp_l.sum()
-    return float(probs[_NLI_ENTAILMENT_IDX])
 
 
 def check_sentence_support(sentence: str, context: str) -> dict:

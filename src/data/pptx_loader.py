@@ -10,11 +10,9 @@ Each slide's title + body text is extracted and concatenated with a
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.util import Pt
 
 
 def _slide_text(slide) -> str:
