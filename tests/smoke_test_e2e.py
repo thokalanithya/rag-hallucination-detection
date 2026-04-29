@@ -68,7 +68,14 @@ if len(answerable_pairs) < 3:
         "Try increasing max_papers."
     )
 
-rag_cases = answerable_pairs[:3]
+rag_cases = answerable_pairs[:20]
+"""
+What is the seed lexicon?
+How are relations used to propagate polarity?
+How is the annotation experiment evaluated?
+How is the clinical text structuring task defined?
+How big is dataset of pathology reports collected from Ruijing Hospital?
+"""
 
 print(f"  Loaded {len(documents)} documents, {len(qa_pairs)} QA pairs")
 print(f"  Selected {len(rag_cases)} RAG test cases from Qasper:")

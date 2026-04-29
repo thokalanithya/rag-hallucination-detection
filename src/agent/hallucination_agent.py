@@ -1,42 +1,38 @@
 """
 hallucination_agent.py
 -----------------------
-Proper agentic hallucination detector powered by Azure OpenAI (GPT-4o).
+Two-gate hallucination detector — no LLM involved.
 
 Architecture
 ------------
-GPT-4o is the sole reasoner. It uses three deterministic utility tools to
-gather evidence, then reasons over that evidence itself to produce a verdict.
+  Step 1 → split_sentences(answer)
+            Split the answer into individual sentences (NLTK).
 
-  Tool 1 → split_sentences(answer)
-            Splits the answer into individual sentences (NLTK).
+  Step 2 → Gate 1: check_sentence_support(sentence, context)
+            Bi-encoder cosine similarity [0.0, 1.0].
+            ≥ 0.65 → grounded, skip Gate 2.
 
-  Tool 2 → check_sentence_support(sentence, context)
-            Returns a semantic similarity score [0.0, 1.0] using
-            sentence-transformers. Low score = likely unsupported.
+  Step 3 → Gate 2 (only for sentences that failed Gate 1):
+            Per-passage max cosine similarity.
+            Context is split into individual numbered passages; check_sentence_support
+            is called on each passage individually and the max score is taken.
+            If max score ≥ 0.65 → grounded.
+            Fixes context-dilution false positives: a single supporting passage
+            can rescue a sentence that scored low against the full merged context
+            because irrelevant chunks diluted the embedding.
 
-  Tool 3 → extract_claims(sentence)
-            Extracts specific verifiable facts (numbers, names, dates,
-            citations) from a sentence for targeted verification.
+  Step 4 → Gate 3: claim verification (RAG answers only, opt-in via verify_claims=True)
+            extract_claims(sentence) pulls out specific verifiable facts
+            (numbers, names, dates, percentages, p-values).
+            find_in_context(claim, context) checks each via exact → token → fuzzy match.
+            If any claim is absent from context → sentence demoted to no_support,
+            type set to "contradicting". Catches factual substitutions that
+            cosine and NLI both miss (e.g. "92% accuracy" when context says "87%").
 
-Agent loop
-----------
-  1. GPT-4o calls split_sentences → gets sentence list
-  2. GPT-4o calls check_sentence_support for each sentence
-  3. For low-support sentences, GPT-4o calls extract_claims
-  4. GPT-4o reasons over all evidence and emits a structured JSON verdict:
-       {
-         "reasoning":             "<chain-of-thought>",
-         "is_hallucinated":       <bool>,
-         "score":                 <float 0.0–1.0>,
-         "hallucination_type":    "<type or none>",
-         "problematic_sentences": ["<sentence>", ...],
-         "explanation":           "<1–2 sentence summary>"
-       }
-
-Provider
---------
-Azure OpenAI (GPT-4o) — reads credentials from .env
+  Step 5 → verdict
+            Hallucination score  = 1 − avg(effective sentence support scores).
+            is_hallucinated      = score ≥ THRESHOLD (0.5).
+            Problematic sentences = those that failed all applicable gates.
 
 Usage
 -----
@@ -53,9 +49,7 @@ Usage
 
 import argparse
 import json
-import os
 import sys
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -67,16 +61,9 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 # Add src/ to path so all packages are importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openai import AzureOpenAI
 from data.halueval_loader import load_halueval_qa
-
-_client = AzureOpenAI(
-    api_key=os.environ["AZURE_OPENAI_API_KEY"],
-    api_version="2024-02-01",
-    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-)
-_model = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-from tools import split_sentences, check_sentence_support, extract_claims, find_in_context, keyword_overlap
+from tools import split_sentences, check_sentence_support, extract_claims, find_in_context
+from config import HallucinationType
 
 # ── Hallucination taxonomy ────────────────────────────────────────────────────
 
@@ -90,6 +77,94 @@ HALLUCINATION_TYPES = [
 ]
 
 THRESHOLD = 0.5
+
+
+# ── GPT-4o hallucination type classifier ─────────────────────────────────────
+
+_TYPE_PROMPT = """\
+A hallucination has been detected in a RAG-generated answer. \
+Classify it into exactly one of the types below.
+
+Types:
+{type_descriptions}
+
+Question:
+{question}
+
+Retrieved context (truncated to 2000 chars):
+{context}
+
+Generated answer:
+{answer}
+
+Flagged sentences (not supported by context):
+{flagged}
+
+Reply with ONLY the type label — no explanation, no punctuation. \
+Choose from:
+{type_labels}"""
+
+
+def _classify_type_with_llm(
+    question: str,
+    context: str,
+    answer: str,
+    problematic_sentences: list[str],
+) -> str:
+    """
+    Call GPT-4o to classify which hallucination type applies.
+    Falls back to 'unsupported_hallucination' on any error.
+    """
+    import os
+    try:
+        from openai import AzureOpenAI
+    except ImportError:
+        return HallucinationType.UNSUPPORTED
+
+    api_key  = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    model    = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+
+    if not api_key or not endpoint:
+        return HallucinationType.UNSUPPORTED
+
+    client = AzureOpenAI(
+        api_key=api_key,
+        api_version="2024-02-01",
+        azure_endpoint=endpoint,
+    )
+
+    # Build descriptions for all non-grounded types
+    non_grounded = [t for t in HallucinationType.ALL_TYPES if t != HallucinationType.GROUNDED]
+    type_descriptions = "\n".join(
+        f"- {t}: {HallucinationType.DESCRIPTIONS[t]}" for t in non_grounded
+    )
+    flagged_text = "\n".join(f"  - {s}" for s in problematic_sentences) \
+        if problematic_sentences else "  (full answer is unsupported)"
+
+    prompt = _TYPE_PROMPT.format(
+        type_descriptions=type_descriptions,
+        question=question,
+        context=context[:2000],
+        answer=answer,
+        flagged=flagged_text,
+        type_labels="\n".join(f"- {t}" for t in non_grounded),
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=30,
+        )
+        raw = response.choices[0].message.content.strip().lower()
+        for t in non_grounded:
+            if t in raw:
+                return t
+        return HallucinationType.UNSUPPORTED
+    except Exception:
+        return HallucinationType.UNSUPPORTED
 
 # ── Result dataclass ──────────────────────────────────────────────────────────
 
@@ -108,379 +183,188 @@ class DetectionResult:
     agent_steps: int = 0
 
 
-# ── Tool definitions (OpenAI function-calling schema) ─────────────────────────
+# ── Hallucination detection ───────────────────────────────────────────────────
 
-TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "split_sentences",
-            "description": (
-                "Split the generated answer into individual sentences. "
-                "Always call this first before any other tool."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "The generated answer to split.",
-                    },
-                },
-                "required": ["text"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "keyword_overlap",
-            "description": (
-                "Supplementary sanity check. Compute token-level F1 word overlap between "
-                "the full answer and the context. Catches gross entity substitutions that "
-                "semantic similarity misses — e.g. 'Mumbai' vs 'Delhi'. "
-                "Returns f1 score, precision, recall, and missing_tokens. "
-                "Call once on the full answer only — not per-sentence. "
-                "Treat missing_tokens as a hint to investigate, not as proof of hallucination."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "answer":  {"type": "string", "description": "Answer text or sentence."},
-                    "context": {"type": "string", "description": "Retrieved context passage."},
-                },
-                "required": ["answer", "context"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_in_context",
-            "description": (
-                "String lookup for a single atomic fact inside the context. "
-                "Call ONLY on individual claims returned by extract_claims — "
-                "one specific number, one proper name, one date per call. "
-                "Do NOT pass phrases, ranges, or paraphrase words. "
-                "Returns found=True/False, match_type, and a context snippet."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "claim":   {"type": "string", "description": "The specific fact or entity to look up."},
-                    "context": {"type": "string", "description": "The retrieved context passage."},
-                },
-                "required": ["claim", "context"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_sentence_support",
-            "description": (
-                "PRIMARY grounding check. Compute semantic similarity between a sentence "
-                "and the context. Returns support_score [0.0, 1.0] and signal: "
-                "'supported' (≥0.65) — sentence is grounded, no further checks needed; "
-                "'low_support' (0.40–0.65) — borderline, verify specific facts; "
-                "'no_support' (<0.40) — likely unsupported, verify specific facts. "
-                "Call on every sentence before any other per-sentence tool."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sentence": {"type": "string", "description": "A sentence from the answer."},
-                    "context":  {"type": "string", "description": "The retrieved context passage."},
-                },
-                "required": ["sentence", "context"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "extract_claims",
-            "description": (
-                "Extract individual atomic verifiable facts (numbers, percentages, dates, "
-                "proper names, citations, p-values) from a sentence. "
-                "Call ONLY on sentences that scored below 0.65 in check_sentence_support. "
-                "Each returned item is one atomic claim to pass separately to find_in_context."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sentence": {"type": "string", "description": "A suspicious sentence."},
-                },
-                "required": ["sentence"],
-            },
-        },
-    },
-]
-
-# ── Tool dispatch (real utility tools — no LLM calls) ─────────────────────────
-
-def _dispatch_tool(tool_name: str, tool_args: dict) -> str:
-    """Execute the named utility tool and return a JSON string result."""
-    if tool_name == "split_sentences":
-        result = split_sentences(tool_args["text"])
-        return json.dumps({"sentences": result, "count": len(result)})
-
-    if tool_name == "keyword_overlap":
-        result = keyword_overlap(tool_args["answer"], tool_args["context"])
-        return json.dumps(result)
-
-    if tool_name == "find_in_context":
-        result = find_in_context(tool_args["claim"], tool_args["context"])
-        return json.dumps(result)
-
-    if tool_name == "check_sentence_support":
-        result = check_sentence_support(tool_args["sentence"], tool_args["context"])
-        return json.dumps(result)
-
-    if tool_name == "extract_claims":
-        result = extract_claims(tool_args["sentence"])
-        return json.dumps(result)
-
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-
-# ── Agent system prompt ────────────────────────────────────────────────────────
-
-AGENT_SYSTEM_PROMPT = """You are a hallucination detection agent for RAG (Retrieval-Augmented Generation) systems.
-
-Your goal: determine whether a generated answer is hallucinated relative to the retrieved context, and classify the exact type.
-
-You have FIVE tools that provide evidence. You do ALL the reasoning yourself.
-
-─── TOOLS ───────────────────────────────────────────────────────────
-1. split_sentences(text)
-   → Split answer into sentences. Call FIRST, always.
-
-2. check_sentence_support(sentence, context)
-   → Semantic similarity score [0.0–1.0]. PRIMARY gate for every sentence.
-   → signal: "supported" (≥0.65), "low_support" (0.40–0.65), "no_support" (<0.40).
-   → Call on EVERY sentence. The result determines whether deeper checks run.
-
-3. extract_claims(sentence)
-   → Pull out atomic verifiable facts: numbers, proper names, dates, percentages,
-     citations. Each is returned as a separate item.
-   → Call ONLY on sentences that scored below 0.65 in check_sentence_support.
-
-4. find_in_context(claim, context)
-   → String lookup: does this exact fact exist in the context?
-   → Call ONLY on individual atomic claims from extract_claims — one claim per call.
-   → NEVER call it on a phrase, a range, or a paraphrase word.
-
-5. keyword_overlap(answer, context)
-   → Token-level F1. Use as a supplementary sanity check on the full answer only.
-   → Helps spot gross entity substitutions (Mumbai vs Delhi). Do not use per-sentence.
-
-─── RECOMMENDED WORKFLOW ────────────────────────────────────────────
-Step 1: split_sentences(answer)
-Step 2: For EACH sentence → check_sentence_support(sentence, context)
-          ● score ≥ 0.65 ("supported") → sentence is GROUNDED. Stop here for this sentence.
-          ● score 0.40–0.65 ("low_support") → run Steps 3–4 on this sentence.
-          ● score < 0.40 ("no_support") → run Steps 3–4 on this sentence.
-Step 3: extract_claims(sentence)  ← only for sentences below 0.65
-Step 4: find_in_context(claim, context)  ← one call per atomic claim from Step 3
-Step 5: keyword_overlap(full_answer, context)  ← optional sanity check on the whole answer
-Step 6: Reason over ALL evidence → emit final JSON verdict
-
-─── CRITICAL REASONING RULES ────────────────────────────────────────
-★ check_sentence_support ≥ 0.65 = GROUNDED. Do not override it.
-  If a sentence scores "supported", it is semantically aligned with the context.
-  The LLM always paraphrases — "surgical details" means the same as "how far
-  from the tumor is cut during surgery." Do NOT call find_in_context on
-  supported sentences. Do NOT flag paraphrase as overgeneralization.
-
-★ find_in_context verifies ATOMIC facts only — never phrases or ranges.
-  Extract individual atoms from extract_claims first, then check each one.
-  "0.556" and "0.731" are valid individual claims to check.
-  "0.556 to 0.731" is a paraphrased range — do NOT pass it to find_in_context.
-  "leveraging" is a paraphrase verb — do NOT pass it to find_in_context.
-
-★ A sentence needs BOTH low semantic support AND a missing specific fact
-  to be classified as hallucinated.
-  Low similarity alone → possible paraphrase, not hallucination.
-  Missing specific fact alone on a supported sentence → not hallucination.
-  Low similarity + find_in_context(specific_fact) = False → hallucination.
-
-★ keyword_overlap missing_tokens are background signal only.
-  Most missing tokens are paraphrase words. Only treat a missing token as
-  suspicious if it is a proper name, number, or date AND the sentence already
-  scored below 0.65 in check_sentence_support.
-
-★ Short answers need extra care.
-  A one-word answer that does not appear in context = hallucinated.
-  A one-word answer that appears exactly in context = grounded.
-
-─── HALLUCINATION TYPES ─────────────────────────────────────────────
-- unsupported       : claim absent from context (not mentioned at all)
-- contradicting     : claim directly contradicts something in context
-- fabricated        : invented name, number, citation, or entity
-- overgeneralization: broader conclusion than context supports
-- partial           : part grounded, but extra invented details added
-- none              : answer is fully grounded
-
-─── FINAL OUTPUT ─────────────────────────────────────────────────────
-After ALL tool calls, output ONLY this JSON (no markdown fences, no extra text):
-
-{
-  "reasoning": "<step-by-step: what tools showed, what you concluded>",
-  "is_hallucinated": <true or false>,
-  "score": <float 0.0–1.0; 0.0=fully grounded, 1.0=fully hallucinated>,
-  "hallucination_type": "<one of the 6 types>",
-  "problematic_sentences": ["<exact sentence>", ...],
-  "explanation": "<1–2 sentence plain-English finding>"
-}"""
-
-
-# ── Core agent loop ────────────────────────────────────────────────────────────
 
 def run_agent(
     context: str,
     answer: str,
     question: str = "",
-    max_steps: int = 15,
+    max_steps: int = 15,  # unused — kept for interface compatibility
     verbose: bool = False,
+    verify_claims: bool = False,
+    chunks: list[dict] | None = None,
 ) -> DetectionResult:
     """
-    Run the hallucination detection agent for a single (context, answer) pair.
+    Detect hallucination using a two-gate pipeline.
 
-    GPT-4o uses split_sentences → check_sentence_support → extract_claims
-    to gather evidence, then reasons over it to produce a structured verdict.
+    Gate 1 — cosine(sentence, full_merged_context): fast first pass.
+              ≥ 0.65 → grounded immediately.
+
+    Gate 2 — max cosine(sentence, each_chunk_individually): fires only when
+              Gate 1 fails. Uses the raw retrieved chunks passed via `chunks`
+              so each chunk is compared in isolation — no dilution from
+              unrelated chunks being merged into one embedding. A single
+              supporting chunk is enough to rescue the sentence.
+
+    Gate 3 (RAG only, verify_claims=True) — claim verification: sentences that
+              passed Gates 1 or 2 are checked for specific verifiable facts
+              (numbers, names, dates); any claim absent from context is a hard
+              veto → sentence demoted to no_support, type = "contradicting".
 
     Parameters
     ----------
-    context   : Retrieved context passage
-    answer    : Generated answer to evaluate
-    question  : Original question (for record-keeping)
-    max_steps : Maximum tool-call iterations
-    verbose   : Print each agent step
+    context       : Merged context string sent to the LLM (used for Gate 1 and Gate 3)
+    answer        : Generated answer to evaluate
+    question      : Original question (for record-keeping)
+    max_steps     : Unused — kept so callers don't need to change their signature
+    verbose       : Print per-sentence scores
+    verify_claims : Run Gate 3 claim verification (enable for RAG answers only)
+    chunks        : Individual retrieved chunk dicts (must have a "text" key).
+                    When provided, Gate 2 compares against each chunk text
+                    separately. Falls back to splitting context by [N] headers
+                    if not provided.
 
     Returns
     -------
     DetectionResult with score, type, problematic sentences, reasoning, explanation
     """
-    messages: list[dict] = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Question: {question}\n\n"
-                f"Retrieved context:\n{context}\n\n"
-                f"Generated answer:\n{answer}"
-            ),
-        },
-    ]
+    sentences = split_sentences(answer)
 
-    # Default verdict values
-    score                 = 0.0
-    hall_type             = "none"
-    problematic_sentences = []
-    reasoning             = ""
-    explanation           = "Answer is grounded."
-    steps                 = 0
-
-    for step in range(max_steps):
-        if verbose:
-            print(f"    [step {step + 1}] calling GPT-4o …")
-
-        raw_resp  = _client.chat.completions.create(
-            model=_model, messages=messages, tools=TOOLS,
-            tool_choice="auto", temperature=0.0,
+    if not sentences:
+        return DetectionResult(
+            question=question, context=context, answer=answer,
+            score=0.0, is_hallucinated=False, hallucination_type="none",
+            problematic_sentences=[], reasoning="No sentences found.",
+            explanation="Empty answer — treated as grounded.", agent_steps=0,
         )
-        msg = raw_resp.choices[0].message
-        response = {
-            "role":    msg.role,
-            "content": msg.content,
-            "tool_calls": [
-                {"id": tc.id, "type": tc.type,
-                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                for tc in (msg.tool_calls or [])
-            ],
-        }
-        messages.append(response)
 
-        tool_calls = response.get("tool_calls", [])
+    # Build the list of individual texts for Gate 2.
+    # Prefer the raw chunk texts (passed via `chunks`) — each chunk is a clean,
+    # focused passage with no dilution from other chunks. Fall back to splitting
+    # the merged context string by [N] headers if chunks are not provided.
+    if chunks:
+        _chunk_texts = [c["text"].strip() for c in chunks if c.get("text", "").strip()]
+    else:
+        import re as _re
+        _passages = _re.split(r'\n\n(?=\[\d+\])', context.strip())
+        _chunk_texts = [p.strip() for p in _passages if p.strip()] or [context]
 
-        # No tool calls → GPT-4o produced its final verdict
-        if not tool_calls:
-            raw = (response.get("content") or "").strip()
-            if verbose:
-                print(f"    [verdict]\n{raw}")
+    support_scores: list[float] = []
+    flagged: list[tuple[str, float]] = []
+    nli_rescued: int = 0
+    claims_failed: int = 0
 
-            # Strip accidental markdown fences
-            if "```" in raw:
-                parts = raw.split("```")
-                for part in parts:
-                    part = part.strip()
-                    if part.startswith("json"):
-                        part = part[4:].strip()
-                    if part.startswith("{"):
-                        raw = part
+    _ANAPHORIC = {"this", "these", "it", "they", "their", "its", "such", "here"}
+
+    for i, sentence in enumerate(sentences):
+        result = check_sentence_support(sentence, context)
+        score  = result["support_score"]
+        signal = result["signal"]
+
+        # Gate 2: max cosine against individual chunks (only for Gate 1 failures).
+        # Each chunk is compared in isolation so unrelated chunks cannot dilute
+        # the score. A single chunk with cosine ≥ 0.65 rescues the sentence.
+        if signal != "supported":
+            import logging as _logging
+            _log = _logging.getLogger("rag_app")
+            # For anaphoric sentences ("This...", "These...", "It...") the
+            # bi-encoder cannot resolve the pronoun without context. Prepend
+            # the previous sentence so the model sees the full referential chain.
+            first_word = sentence.strip().split()[0].lower() if sentence.strip() else ""
+            gate2_text = (
+                sentences[i - 1] + " " + sentence if (i > 0 and first_word in _ANAPHORIC)
+                else sentence
+            )
+            chunk_scores = [
+                check_sentence_support(gate2_text, text)["support_score"]
+                for text in _chunk_texts
+            ]
+            max_chunk_score = max(chunk_scores)
+            _log.warning(
+                f"Gate2 | sentence: {sentence[:70]!r} | "
+                f"chunk scores: {[round(s,3) for s in chunk_scores]} | "
+                f"max={max_chunk_score:.3f}"
+            )
+            # Gate 2 threshold (0.50) is lower than Gate 1 (0.65): individual
+            # chunk texts are longer than the answer sentence, so the pooled
+            # embedding naturally scores lower even for semantically aligned pairs.
+            if max_chunk_score >= 0.50:
+                score  = max_chunk_score
+                signal = "supported"
+                nli_rescued += 1
+
+        # Gate 3: claim verification (RAG only, only for sentences that passed Gates 1+2)
+        if verify_claims and signal == "supported":
+            claim_result = extract_claims(sentence)
+            if claim_result["has_claims"]:
+                for claim_item in claim_result["claims"]:
+                    lookup = find_in_context(claim_item["value"], context)
+                    if not lookup["found"]:
+                        score  = 0.35  # demote to no_support — specific fact not in context
+                        signal = "contradicting"
+                        claims_failed += 1
                         break
 
-            try:
-                verdict               = json.loads(raw)
-                score                 = float(verdict.get("score", score))
-                hall_type             = verdict.get("hallucination_type", hall_type)
-                problematic_sentences = verdict.get("problematic_sentences", [])
-                reasoning             = verdict.get("reasoning", "")
-                explanation           = verdict.get("explanation", explanation)
-                # Reconcile score with is_hallucinated so both agree.
-                # If is_hallucinated=False but score is high, cap it down.
-                # If is_hallucinated=True but score is low, bump it up.
-                is_hall = verdict.get("is_hallucinated", score >= THRESHOLD)
-                if not is_hall and score >= THRESHOLD:
-                    score = min(score, THRESHOLD - 0.01)
-                elif is_hall and score < THRESHOLD:
-                    score = max(score, THRESHOLD)
-            except (json.JSONDecodeError, ValueError):
-                pass  # use defaults
+        support_scores.append(score)
 
-            steps = step + 1
-            break
+        if verbose:
+            print(f"    [{signal}] {score:.3f} | {sentence[:80]}")
 
-        # Execute each tool call with the real utility functions
-        for tc in tool_calls:
-            fn_name = tc["function"]["name"]
-            try:
-                fn_args = json.loads(tc["function"]["arguments"])
-            except json.JSONDecodeError:
-                fn_args = {}
+        if signal != "supported":
+            flagged.append((sentence, score))
 
-            if verbose:
-                arg_preview = {k: (v[:60] + "…" if isinstance(v, str) and len(v) > 60 else v)
-                               for k, v in fn_args.items()}
-                print(f"    [tool] {fn_name}({arg_preview})")
+    avg_support = sum(support_scores) / len(support_scores)
+    hall_score  = round(max(0.0, min(1.0, 1.0 - avg_support)), 4)
+    is_hall     = hall_score >= THRESHOLD
 
-            tool_result = _dispatch_tool(fn_name, fn_args)
+    n_no_support  = sum(1 for s in support_scores if s < 0.40)
+    n_low_support = sum(1 for s in support_scores if 0.40 <= s < 0.65)
 
-            if verbose:
-                result_preview = tool_result[:120] + "…" if len(tool_result) > 120 else tool_result
-                print(f"    [result] {result_preview}")
+    problematic_sentences = [s for s, _ in flagged]
 
-            messages.append({
-                "role":         "tool",
-                "tool_call_id": tc["id"],
-                "content":      tool_result,
-            })
+    if not is_hall:
+        hall_type = "none"
+    else:
+        hall_type = _classify_type_with_llm(
+            question=question,
+            context=context,
+            answer=answer,
+            problematic_sentences=problematic_sentences,
+        )
 
-        steps = step + 1
-        time.sleep(0.05)
+    score_str = " | ".join(f"{s:.2f}" for s in support_scores)
+    reasoning = (
+        f"Per-sentence support scores: [{score_str}]. "
+        f"Avg support: {avg_support:.3f}. "
+        f"Supported: {len(support_scores) - n_no_support - n_low_support} "
+        f"(incl. {nli_rescued} rescued by NLI gate), "
+        f"Low: {n_low_support}, No support: {n_no_support} "
+        f"(incl. {claims_failed} failed claim verification)."
+    )
+
+    if is_hall:
+        explanation = (
+            f"{len(flagged)} of {len(sentences)} sentence(s) scored below the "
+            f"support threshold (avg cosine similarity={avg_support:.3f})."
+        )
+    else:
+        explanation = (
+            f"All sentences are semantically aligned with the retrieved context "
+            f"(avg cosine similarity={avg_support:.3f})."
+        )
 
     return DetectionResult(
         question=question,
         context=context,
         answer=answer,
-        score=score,
-        is_hallucinated=score >= THRESHOLD,
+        score=hall_score,
+        is_hallucinated=is_hall,
         hallucination_type=hall_type,
         problematic_sentences=problematic_sentences,
         reasoning=reasoning,
         explanation=explanation,
-        agent_steps=steps,
+        agent_steps=len(sentences),
     )
 
 
@@ -624,7 +508,7 @@ def evaluate_qa_data(
     print("\n" + "=" * 60)
     print("QA DATA EVALUATION RESULTS")
     print("=" * 60)
-    print(f"Provider          : Azure OpenAI ({_model})")
+    print(f"Provider          : cosine similarity (sentence-transformers)")
     print(f"Samples           : {len(df)}  ({g_count} grounded + {h_count} hallucinated)")
     print(f"Accuracy          : {accuracy_score(y_true, y_pred):.3f}")
     print(f"Precision         : {precision_score(y_true, y_pred, zero_division=0):.3f}")
@@ -692,7 +576,7 @@ def run_pipeline(
     print("\n" + "=" * 60)
     print("AGENT EVALUATION RESULTS")
     print("=" * 60)
-    print(f"Provider          : Azure OpenAI ({_model})")
+    print(f"Provider          : cosine similarity (sentence-transformers)")
     print(f"Samples evaluated : {len(results_df)}")
     print(f"Accuracy          : {accuracy_score(y_true, y_pred):.3f}")
     print(f"Precision         : {precision_score(y_true, y_pred, zero_division=0):.3f}")
@@ -719,7 +603,7 @@ def run_pipeline(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Azure OpenAI hallucination detection agent"
+        description="Cosine-similarity hallucination detector"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

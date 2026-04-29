@@ -13,7 +13,7 @@ find_in_context       : direct lookup of a claim inside the context
 keyword_overlap       : token-level F1 word overlap (answer vs context)
 """
 from .sentence_splitter  import split_sentences
-from .similarity_checker import check_sentence_support
+from .similarity_checker import check_sentence_support, check_nli_entailment
 from .claim_extractor    import extract_claims
 from .find_in_context    import find_in_context
 from .keyword_overlap    import keyword_overlap
@@ -21,6 +21,7 @@ from .keyword_overlap    import keyword_overlap
 __all__ = [
     "split_sentences",
     "check_sentence_support",
+    "check_nli_entailment",
     "extract_claims",
     "find_in_context",
     "keyword_overlap",

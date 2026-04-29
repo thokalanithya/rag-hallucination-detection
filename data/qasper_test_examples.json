@@ -1,0 +1,228 @@
+[
+  {
+    "id": 1,
+    "paper_id": "1909.00694",
+    "title": "Minimally Supervised Learning of Affective Events Using Discourse Relations",
+    "question": "What is the seed lexicon?",
+    "answer": "a vocabulary of positive and negative predicates that helps determine the polarity score of an event",
+    "evidence": [
+      "The seed lexicon consists of positive and negative predicates. If the predicate of an extracted event is in the seed lexicon and does not involve complex phenomena like negation, we assign the corresponding polarity score ($+1$ for positive events and $-1$ for negative events) to the event. We expect the model to automatically learn complex phenomena through label propagation. Based on the availability of scores and the types of discourse relations, we classify the extracted event pairs into the following three types."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 2,
+    "paper_id": "2003.07723",
+    "title": "PO-EMO: Conceptualization, Annotation, and Modeling of Aesthetic Emotions in German and English Poetry",
+    "question": "Does the paper report macro F1?",
+    "answer": "Yes",
+    "evidence": [
+      "FLOAT SELECTED: Table 7: Recall and precision scores of the best model (dbmdz) for each emotion on the test set. \u2018Support\u2019 signifies the number of labels."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 3,
+    "paper_id": "1705.09665",
+    "title": "Community Identity and User Engagement in a Multi-Community Landscape",
+    "question": "Do they report results only on English data?",
+    "answer": "No",
+    "evidence": [
+      "Our full dataset consists of all subreddits on Reddit from January 2013 to December 2014, for which there are at least 500 words in the vocabulary used to estimate our measures, in at least 4 months of the subreddit's history. We compute our measures over the comments written by users in a community in time windows of months, for each sufficiently active month, and manually remove communities where the bulk of the contributions are in a foreign language. This results in 283 communities ( INLINEFORM0 ), for a total of 4,872 community-months ( INLINEFORM1 )."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 4,
+    "paper_id": "1908.06606",
+    "title": "Question Answering based Clinical Text Structuring Using Pre-trained Language Model",
+    "question": "What data is the language model pretrained on?",
+    "answer": "Chinese general corpus",
+    "evidence": [
+      "To implement deep neural network models, we utilize the Keras library BIBREF36 with TensorFlow BIBREF37 backend. Each model is run on a single NVIDIA GeForce GTX 1080 Ti GPU. The models are trained by Adam optimization algorithm BIBREF38 whose parameters are the same as the default settings except for learning rate set to $5\\times 10^{-5}$. Batch size is set to 3 or 4 due to the lack of graphical memory. We select BERT-base as the pre-trained language model in this paper. Due to the high cost of pre-training BERT language model, we directly adopt parameters pre-trained by Google in Chinese general corpus. The named entity recognition is applied on both pathology report texts and query texts."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 5,
+    "paper_id": "1811.00942",
+    "title": "Progress and Tradeoffs in Neural Language Models",
+    "question": "What aspects have been compared between various language models?",
+    "answer": "Quality measures using perplexity and recall, and performance measured using latency and energy usage.",
+    "evidence": [
+      "For each model, we examined word-level perplexity, R@3 in next-word prediction, latency (ms/q), and energy usage (mJ/q). To explore the perplexity\u2013recall relationship, we collected individual perplexity and recall statistics for each sentence in the test set."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 6,
+    "paper_id": "1805.02400",
+    "title": "Stay On-Topic: Generating Context-specific Fake Restaurant Reviews",
+    "question": "Which dataset do they use a starting point in generating fake reviews?",
+    "answer": "the Yelp Challenge dataset",
+    "evidence": [
+      "We use the Yelp Challenge dataset BIBREF2 for our fake review generation. The dataset (Aug 2017) contains 2.9 million 1 \u20135 star restaurant reviews. We treat all reviews as genuine human-written reviews for the purpose of this work, since wide-scale deployment of machine-generated review attacks are not yet reported (Sep 2017) BIBREF19 . As preprocessing, we remove non-printable (non-ASCII) characters and excessive white-space. We separate punctuation from words. We reserve 15,000 reviews for validation and 3,000 for testing, and the rest we use for training. NMT models require a parallel corpus of source and target sentences, i.e. a large set of (source, target)-pairs. We set up a parallel corpus by constructing (context, review)-pairs from the dataset. Next, we describe how we created our input context."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 7,
+    "paper_id": "1907.05664",
+    "title": "Saliency Maps Generation for Automatic Text Summarization",
+    "question": "Which baselines did they compare?",
+    "answer": "The baseline model is a deep sequence-to-sequence encoder/decoder model with attention. The encoder is a bidirectional Long-Short Term Memory(LSTM) cell BIBREF14 and the decoder a single LSTM cell with attention mechanism. The attention mechanism is computed as in BIBREF9 and we use a greedy search for decoding. We train end-to-end including the words embeddings. The embedding size used is of 128 and the hidden state size of the LSTM cells is of 254.",
+    "evidence": [
+      "We present in this section the baseline model from See et al. See2017 trained on the CNN/Daily Mail dataset. We reproduce the results from See et al. See2017 to then apply LRP on it.",
+      "The baseline model is a deep sequence-to-sequence encoder/decoder model with attention. The encoder is a bidirectional Long-Short Term Memory(LSTM) cell BIBREF14 and the decoder a single LSTM cell with attention mechanism. The attention mechanism is computed as in BIBREF9 and we use a greedy search for decoding. We train end-to-end including the words embeddings. The embedding size used is of 128 and the hidden state size of the LSTM cells is of 254."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 8,
+    "paper_id": "1910.14497",
+    "title": "Probabilistic Bias Mitigation in Word Embeddings",
+    "question": "How is embedding quality assessed?",
+    "answer": "We compare this method of bias mitigation with the no bias mitigation (\"Orig\"), geometric bias mitigation (\"Geo\"), the two pieces of our method alone (\"Prob\" and \"KNN\") and the composite method (\"KNN+Prob\"). We note that the composite method performs reasonably well according the the RIPA metric, and much better than traditional geometric bias mitigation according to the neighborhood metric, without significant performance loss according to the accepted benchmarks. To our knowledge this is the first bias mitigation method to perform reasonably both on both metrics.",
+    "evidence": [
+      "We evaluate our framework on fastText embeddings trained on Wikipedia (2017), UMBC webbase corpus and statmt.org news dataset (16B tokens) BIBREF11. For simplicity, only the first 22000 words are used in all embeddings, though preliminary results indicate the findings extend to the full corpus. For our novel methods of mitigating bias, a shallow neural network is used to adjust the embedding. The single layer of the model is an embedding layer with weights initialized to those of the original embedding. For the composite method, these weights are initialized to those of the embedding after probabilistic bias mitigation. A batch of word indices is fed into the model, which are then embedded and for which a loss value is calculated, allowing back-propagation to adjust the embeddings. For each of the models, a fixed number of iterations is used to prevent overfitting, which can eventually hurt performance on the embedding benchmarks (See Figure FIGREF12). We evaluated the embedding after 1000 iterations, and stopped training if performance on a benchmark decreased significantly.",
+      "We construct a list of candidate words to debias, taken from the words used in the WEAT gender bias statistics. Words in this list should be gender neutral, and are related to the topics of career, arts, science, math, family and professions (see appendix). We note that this list can easily be expanded to include a greater proportion of words in the corpus. For example, BIBREF4 suggested a method for identifying inappropriately gendered words using unsupervised learning.",
+      "We compare this method of bias mitigation with the no bias mitigation (\"Orig\"), geometric bias mitigation (\"Geo\"), the two pieces of our method alone (\"Prob\" and \"KNN\") and the composite method (\"KNN+Prob\"). We note that the composite method performs reasonably well according the the RIPA metric, and much better than traditional geometric bias mitigation according to the neighborhood metric, without significant performance loss according to the accepted benchmarks. To our knowledge this is the first bias mitigation method to perform reasonably both on both metrics."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 9,
+    "paper_id": "1912.02481",
+    "title": "Massive vs. Curated Word Embeddings for Low-Resourced Languages. The Case of Yor\\`ub\\'a and Twi",
+    "question": "What turn out to be more important high volume or high quality data?",
+    "answer": "only high-quality data helps",
+    "evidence": [
+      "The Spearman $\\rho $ correlation for fastText models on the curated small dataset (clean), C1, improves the baselines by a large margin ($\\rho =0.354$ for Twi and 0.322 for Yor\u00f9b\u00e1) even with a small dataset. The improvement could be justified just by the larger vocabulary in Twi, but in the case of Yor\u00f9b\u00e1 the enhancement is there with almost half of the vocabulary size. We found out that adding some noisy texts (C2 dataset) slightly improves the correlation for Twi language but not for the Yor\u00f9b\u00e1 language. The Twi language benefits from Wikipedia articles because its inclusion doubles the vocabulary and reduces the bias of the model towards religious texts. However, for Yor\u00f9b\u00e1, noisy texts often ignore diacritics or tonal marks which increases the vocabulary size at the cost of an increment in the ambiguity too. As a result, the correlation is slightly hurt. One would expect that training with more data would improve the quality of the embeddings, but we found out with the results obtained with the C3 dataset, that only high-quality data helps. The addition of JW300 boosts the vocabulary in both cases, but whereas for Twi the corpus mixes dialects and is noisy, for Yor\u00f9b\u00e1 it is very clean and with full diacritics. Consequently, the best embeddings for Yor\u00f9b\u00e1 are obtained when training with the C3 dataset, whereas for Twi, C2 is the best option. In both cases, the curated embeddings improve the correlation with human judgements on the similarity task a $\\Delta \\rho =+0.25$ or, equivalently, by an increment on $\\rho $ of 170% (Twi) and 180% (Yor\u00f9b\u00e1)."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 10,
+    "paper_id": "1810.04528",
+    "title": "Is there Gender bias and stereotype in Portuguese Word Embeddings?",
+    "question": "What were the word embeddings trained on?",
+    "answer": "large Portuguese corpus",
+    "evidence": [
+      "In BIBREF14 , several word embedding models trained in a large Portuguese corpus are evaluated. Within the Word2Vec model, two training strategies were used. In the first, namely Skip-Gram, the model is given the word and attempts to predict its neighboring words. The second, Continuous Bag-of-Words (CBOW), the model is given the sequence of words without the middle one and attempts to predict this omitted word. The latter was chosen for application in the present proposal.",
+      "Using the word2vec model available in a public repository BIBREF14 , the proposal involves the analysis of the most similar analogies generated before and after the application of the BIBREF3 . The work is focused on the analysis of gender bias associated with professions in word embeddings. So therefore into the evaluation of the accuracy of the associations generated, aiming at achieving results as good as possible without prejudicing the evaluation metrics."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 11,
+    "paper_id": "2002.02224",
+    "title": "Citation Data of Czech Apex Courts",
+    "question": "Did they experiment on this dataset?",
+    "answer": "No",
+    "evidence": [],
+    "answerable": true
+  },
+  {
+    "id": 12,
+    "paper_id": "2003.07433",
+    "title": "LAXARY: A Trustworthy Explainable Twitter Analysis Model for Post-Traumatic Stress Disorder Assessment",
+    "question": "Do the authors mention any possible confounds in this study?",
+    "answer": "No",
+    "evidence": [],
+    "answerable": true
+  },
+  {
+    "id": 13,
+    "paper_id": "2003.12218",
+    "title": "Comprehensive Named Entity Recognition on CORD-19 with Distant or Weak Supervision",
+    "question": "Did they experiment with the dataset?",
+    "answer": "Yes",
+    "evidence": [
+      "In Figure FIGREF28, we show some examples of the annotation results in CORD-19-NER. We can see that our distantly- or weakly supervised methods achieve high quality recognizing the new entity types, requiring only several seed examples as the input. For example, we recognized \u201cSARS-CoV-2\" as the \u201cCORONAVIRUS\" type, \u201cbat\" and \u201cpangolins\" as the \u201cWILDLIFE\" type and \u201cVan der Waals forces\" as the \u201cPHYSICAL_SCIENCE\" type. This NER annotation results help downstream text mining tasks in discovering the origin and the physical nature of the virus. Our NER methods are domain-independent that can be applied to corpus in different domains. In addition, we show another example of NER annotation on New York Times with our system in Figure FIGREF29.",
+      "In Figure FIGREF30, we show the comparison of our annotation results with existing NER/BioNER systems. In Figure FIGREF30, we can see that only our method can identify \u201cSARS-CoV-2\" as a coronavirus. In Figure FIGREF30, we can see that our method can identify many more entities such as \u201cpylogenetic\" as a evolution term and \u201cbat\" as a wildlife. In Figure FIGREF30, we can also see that our method can identify many more entities such as \u201cracism\" as a social behavior. In summary, our distantly- and weakly-supervised NER methods are reliable for high-quality entity recognition without requiring human effort for training data annotation."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 14,
+    "paper_id": "1904.09678",
+    "title": "UniSent: Universal Adaptable Sentiment Lexica for 1000+ Languages",
+    "question": "how is quality measured?",
+    "answer": "Accuracy and the macro-F1 (averaged F1 over positive and negative classes) are used as a measure of quality.",
+    "evidence": [
+      "FLOAT SELECTED: Table 1: Comparison of manually created lexicon performance with UniSent in Czech, German, French, Macedonians, and Spanish. We report accuracy and the macro-F1 (averaged F1 over positive and negative classes). The baseline is constantly considering the majority label. The last two columns indicate the performance of UniSent after drift weighting."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 15,
+    "paper_id": "2003.06651",
+    "title": "Word Sense Disambiguation for 158 Languages using Word Embeddings Only",
+    "question": "Is the method described in this work a clustering-based method?",
+    "answer": "Yes",
+    "evidence": [
+      "The task of Word Sense Induction (WSI) can be seen as an unsupervised version of WSD. WSI aims at clustering word senses and does not require to map each cluster to a predefined sense. Instead of that, word sense inventories are induced automatically from the clusters, treating each cluster as a single sense of a word. WSI approaches fall into three main groups: context clustering, word ego-network clustering and synonyms (or substitute) clustering.",
+      "We suggest a more advanced procedure of graph construction that uses the interpretability of vector addition and subtraction operations in word embedding space BIBREF6 while the previous algorithm only relies on the list of nearest neighbours in word embedding space. The key innovation of our algorithm is the use of vector subtraction to find pairs of most dissimilar graph nodes and construct the graph only from the nodes included in such \u201canti-edges\u201d. Thus, our algorithm is based on graph-based word sense induction, but it also relies on vector-based operations between word embeddings to perform filtering of graph nodes. Analogously to the work of Pelevina:16, we construct a semantic relatedness graph from a list of nearest neighbours, but we filter this list using the following procedure:"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 16,
+    "paper_id": "1910.04269",
+    "title": "Spoken Language Identification using ConvNets",
+    "question": "Does the model use both spectrogram images and raw waveforms as features?",
+    "answer": "No",
+    "evidence": [
+      "FLOAT SELECTED: Table 4: Results of the two models and all its variations"
+    ],
+    "answerable": true
+  },
+  {
+    "id": 17,
+    "paper_id": "1906.00378",
+    "title": "Unsupervised Bilingual Lexicon Induction from Mono-lingual Multimodal Data",
+    "question": "Which vision-based approaches does this approach outperform?",
+    "answer": "CNN-mean ... CNN-avgmax",
+    "evidence": [
+      "We compare our approach with two baseline vision-based methods proposed in BIBREF6 , BIBREF7 , which measure the similarity of two sets of global visual features for bilingual lexicon induction:",
+      "CNN-mean: taking the similarity score of the averaged feature of the two image sets.",
+      "CNN-avgmax: taking the average of the maximum similarity scores of two image sets."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 18,
+    "paper_id": "1912.13072",
+    "title": "AraNet: A Deep Learning Toolkit for Arabic Social Media",
+    "question": "Did they experiment on all the tasks?",
+    "answer": "Yes",
+    "evidence": [
+      "Implementation & Models Parameters. For all our tasks, we use the BERT-Base Multilingual Cased model released by the authors . The model is trained on 104 languages (including Arabic) with 12 layer, 768 hidden units each, 12 attention heads, and has 110M parameters in entire model. The model has 119,547 shared WordPieces vocabulary, and was pre-trained on the entire Wikipedia for each language. For fine-tuning, we use a maximum sequence size of 50 tokens and a batch size of 32. We set the learning rate to $2e-5$ and train for 15 epochs and choose the best model based on performance on a development set. We use the same hyper-parameters in all of our BERT models. We fine-tune BERT on each respective labeled dataset for each task. For BERT input, we apply WordPiece tokenization, setting the maximal sequence length to 50 words/WordPieces. For all tasks, we use a TensorFlow implementation. An exception is the sentiment analysis task, where we used a PyTorch implementation with the same hyper-parameters but with a learning rate $2e-6$.",
+      "We presented AraNet, a deep learning toolkit for a host of Arabic social media processing. AraNet predicts age, dialect, gender, emotion, irony, and sentiment from social media posts. It delivers state-of-the-art and competitive performance on these tasks and has the advantage of using a unified, simple framework based on the recently-developed BERT model. AraNet has the potential to alleviate issues related to comparing across different Arabic social media NLP tasks, by providing one way to test new models against AraNet predictions. Our toolkit can be used to make important discoveries on the wide region of the Arab world, and can enhance our understating of Arab online communication. AraNet will be publicly available upon acceptance."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 19,
+    "paper_id": "1712.09127",
+    "title": "Generative Adversarial Nets for Multiple Text Corpora",
+    "question": "Which GAN do they use?",
+    "answer": "We construct a GAN model which combines different sets of word embeddings INLINEFORM4 , INLINEFORM5 , into a single set of word embeddings INLINEFORM6 .",
+    "evidence": [
+      "We assume that for each corpora INLINEFORM0 , we are given word embeddings for each word INLINEFORM1 , where INLINEFORM2 is the dimension of each word embedding. We are also given a classification task on documents that is represented by a parametric model INLINEFORM3 taking document embeddings as feature vectors. We construct a GAN model which combines different sets of word embeddings INLINEFORM4 , INLINEFORM5 , into a single set of word embeddings INLINEFORM6 . Note that INLINEFORM7 are given but INLINEFORM8 is trained. Here we consider INLINEFORM9 as the generator, and the goal of the discriminator is to distinguish documents represented by the original embeddings INLINEFORM10 and the same documents represented by the new embeddings INLINEFORM11 ."
+    ],
+    "answerable": true
+  },
+  {
+    "id": 20,
+    "paper_id": "2001.00137",
+    "title": "Stacked DeBERT: All Attention in Incomplete Data for Text Classification",
+    "question": "Do they report results only on English datasets?",
+    "answer": "Yes",
+    "evidence": [
+      "Even though this corpus has incorrect sentences and their emotional labels, they lack their respective corrected sentences, necessary for the training of our model. In order to obtain this missing information, we outsource native English speakers from an unbiased and anonymous platform, called Amazon Mechanical Turk (MTurk) BIBREF19, which is a paid marketplace for Human Intelligence Tasks (HITs). We use this platform to create tasks for native English speakers to format the original incorrect tweets into correct sentences. Some examples are shown in Table TABREF12.",
+      "The dataset used to evaluate the models' performance is the Chatbot Natural Language Unerstanding (NLU) Evaluation Corpus, introduced by Braun et al. BIBREF20 to test NLU services. It is a publicly available benchmark and is composed of sentences obtained from a German Telegram chatbot used to answer questions about public transport connections. The dataset has two intents, namely Departure Time and Find Connection with 100 train and 106 test samples, shown in Table TABREF18. Even though English is the main language of the benchmark, this dataset contains a few German station and street names."
+    ],
+    "answerable": true
+  }
+]

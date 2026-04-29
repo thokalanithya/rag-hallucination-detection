@@ -201,7 +201,13 @@ def run_rag_pipeline(
     answer_text = _extract_answer_text(answer)
     # Always use the full retrieved context so the agent verifies claims against
     # the complete source material, not just the LLM's own cherry-picked quotes.
-    result = run_hallucination_agent(context=context, answer=answer_text, question=question)
+    result = run_hallucination_agent(
+        context=context,
+        answer=answer_text,
+        question=question,
+        verify_claims=(source == "rag"),
+        chunks=retrieved_chunks if source == "rag" else None,
+    )
 
     print(f"      → Score        : {result.score:.4f}")
     print(f"      → Hallucinated : {result.is_hallucinated}")
