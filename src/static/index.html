@@ -262,6 +262,7 @@
     .cite-item strong { color: #ccc; font-weight: 500; }
     .cite-item a { color: #a78bfa; text-decoration: none; font-weight: 500; }
     .cite-item a:hover { text-decoration: underline; }
+    .cite-doc-name { color: #c4b5fd; font-weight: 500; }
 
     .cite-context {
       margin-top: 6px;
@@ -399,13 +400,15 @@
     return m ? m[1].trim() : full.trim();
   }
 
-  /* Replace [N] citation markers with linked superscripts */
+  /* Replace [N] citation markers with superscripts.
+     Web citations (have a url) become links; local RAG docs are plain. */
   function linkCitations(text, cites) {
     return esc(text).replace(/\[(\d+)\]/g, (_, n) => {
       const c = cites[n];
-      let href = '#';
-      if (c) href = c.url ? esc(c.url) : `https://arxiv.org/abs/${esc(c.paper_id || '')}`;
-      return `<sup><a href="${href}" target="_blank" rel="noopener">[${n}]</a></sup>`;
+      if (c && c.url) {
+        return `<sup><a href="${esc(c.url)}" target="_blank" rel="noopener">[${n}]</a></sup>`;
+      }
+      return `<sup>[${n}]</sup>`;
     });
   }
 
@@ -589,12 +592,18 @@
           if (c.url) {
             item.innerHTML = `${esc(label)} <a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title || c.url)}</a>`;
           } else {
-            const arxivUrl = `https://arxiv.org/abs/${esc(c.paper_id || '')}`;
-            item.innerHTML = `${esc(label)} <a href="${arxivUrl}" target="_blank" rel="noopener">${esc(c.title || c.paper_id || '')}</a>`;
+            /* Local document — use paper_id (filename stem) as the clean label */
+            const docName = (c.paper_id || 'Document').replace(/\s{2,}/g, ' ');
+            item.innerHTML = `${esc(label)} <span class="cite-doc-name">📄 ${esc(docName)}</span>`;
           }
 
           /* context excerpt — chunk text for RAG, snippet for web */
-          const contextText = c.context || c.snippet || '';
+          const rawContext = c.context || c.snippet || '';
+          /* collapse pypdf artifacts: single newlines → space, multi-spaces → single */
+          const contextText = rawContext
+            .replace(/\n(?!\n)/g, ' ')
+            .replace(/ {2,}/g, ' ')
+            .trim();
           if (contextText) {
             const ctx = document.createElement('div');
             ctx.className = 'cite-context';

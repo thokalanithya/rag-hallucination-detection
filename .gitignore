@@ -27,6 +27,9 @@ build/
 chroma_db/
 data/
 logs/
+paper/
+deliverables/
+tests/
 
 # Qasper HuggingFace cache (re-downloads automatically on first run)
 data/qasper_cache/

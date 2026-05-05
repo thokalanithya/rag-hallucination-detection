@@ -199,15 +199,49 @@ def run_rag_pipeline(
     print(f"\n[4/4] Detecting hallucination (GPT-4o agent)")
     _emit("status", "Checking for hallucinations...")
     answer_text = _extract_answer_text(answer)
-    # Always use the full retrieved context so the agent verifies claims against
-    # the complete source material, not just the LLM's own cherry-picked quotes.
-    result = run_hallucination_agent(
-        context=context,
-        answer=answer_text,
-        question=question,
-        verify_claims=(source == "rag"),
-        chunks=retrieved_chunks if source == "rag" else None,
+
+    # Web-fallback answers that explicitly decline to answer are grounded by
+    # construction: the LLM is correctly refusing to fabricate. Comparing a
+    # disclaimer like "The search results do not contain..." against irrelevant
+    # web snippets (YouTube, Steam, etc.) produces near-zero cosine scores and
+    # causes false-positive hallucination flags. Skip detection for these cases.
+    _WEB_DECLINE_PHRASES = (
+        "search results provided do not contain",
+        "search results do not provide",
+        "search results do not contain",
+        "cannot answer your question based on the provided search results",
+        "cannot answer based on the provided search results",
+        "no relevant information found",
+        "no relevant references were found",
+        "cannot provide an answer to this question based on the available",
+        "cannot confirm",
     )
+    _is_web_decline = (
+        source == "web"
+        and any(p in answer_text.lower() for p in _WEB_DECLINE_PHRASES)
+    )
+
+    if _is_web_decline:
+        print(f"      → Web answer is a grounded declination — skipping hallucination check")
+        from agent.hallucination_agent import DetectionResult
+        result = DetectionResult(
+            question=question, context=context, answer=answer_text,
+            score=0.0, is_hallucinated=False, hallucination_type="grounded",
+            problematic_sentences=[],
+            reasoning="Web answer explicitly declines to answer — treated as grounded.",
+            explanation="Answer correctly states that the web search did not return relevant information.",
+            agent_steps=0,
+        )
+    else:
+        # Always use the full retrieved context so the agent verifies claims against
+        # the complete source material, not just the LLM's own cherry-picked quotes.
+        result = run_hallucination_agent(
+            context=context,
+            answer=answer_text,
+            question=question,
+            verify_claims=(source == "rag"),
+            chunks=retrieved_chunks if source == "rag" else None,
+        )
 
     print(f"      → Score        : {result.score:.4f}")
     print(f"      → Hallucinated : {result.is_hallucinated}")

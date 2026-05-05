@@ -65,7 +65,7 @@ from data.halueval_loader import load_halueval_qa
 from tools import split_sentences, check_sentence_support, extract_claims, find_in_context
 from config import HallucinationType
 
-THRESHOLD = 0.5
+THRESHOLD = 0.55
 
 
 # ── GPT-4o hallucination type classifier ─────────────────────────────────────
@@ -175,6 +175,89 @@ class DetectionResult:
 # ── Hallucination detection ───────────────────────────────────────────────────
 
 
+# ── Sentence-scoring helpers ──────────────────────────────────────────────────
+
+def _strip_sentence_markup(text: str) -> str:
+    """
+    Remove markdown formatting before cosine scoring.
+
+    Bold headers like **Major Requirement**: distort sentence embeddings because
+    the ** tokens shift the pooled vector away from the plain-text content that
+    appears in the source documents.  Stripping them first raises Gate 1/2 scores
+    for correctly-grounded sentences that happen to use markdown formatting.
+    """
+    import re as _re2
+    text = _re2.sub(r'\*\*([^*]+)\*\*', r'\1', text)   # **bold**
+    text = _re2.sub(r'\*([^*]+)\*',     r'\1', text)    # *italic*
+    text = _re2.sub(r'`([^`]+)`',       r'\1', text)    # `inline code`
+    text = _re2.sub(r'\[[\d,\s]+\]',    '',    text)    # [1] [2,3] citation markers
+    return text.strip()
+
+
+def _expand_academic_abbrevs(text: str) -> str:
+    """
+    Expand common Penn State academic semester abbreviations.
+
+    The source PPTXs use shorthand like "Sp 27" (Spring 2027) and "Fa 27"
+    (Fall 2027).  LLM-generated answers expand these to their full forms.
+    Normalising both sides before scoring prevents near-zero cosine similarities
+    for sentences that are factually identical but use different notation.
+    """
+    import re as _re2
+    text = _re2.sub(r'\bSp\s+(\d{2})\b',  lambda m: f'Spring 20{m.group(1)}', text)
+    text = _re2.sub(r'\bFa\s+(\d{2})\b',  lambda m: f'Fall 20{m.group(1)}',   text)
+    text = _re2.sub(r'\bSu\s+(\d{2})\b',  lambda m: f'Summer 20{m.group(1)}', text)
+    return text
+
+
+def _word_overlap_supported(sentence: str, chunk_texts: list[str], threshold: float = 0.65) -> bool:
+    """
+    Return True if ≥ `threshold` fraction of content words from `sentence`
+    appear in at least one chunk.
+
+    This is a literal-quote rescue for sentences that are near-direct copies of
+    source text but score low on cosine because the containing chunk is large
+    and its pooled embedding is diluted by surrounding unrelated sentences.
+    A typical example: a step-instruction like 'Choose "Something else not
+    covered by the above options."' copied verbatim from a 600-token chunk.
+    """
+    import re as _re2
+    _STOP = {
+        'a','an','the','is','are','was','were','be','been','being',
+        'have','has','had','do','does','did','will','would','could',
+        'should','may','might','to','of','in','on','at','for','from',
+        'with','by','as','or','and','but','if','that','this','these',
+        'those','it','its','not','no','can','use','using','also',
+    }
+
+    def _content_words(t: str) -> list[str]:
+        words = _re2.sub(r'[^\w\s]', ' ', t.lower()).split()
+        return [w for w in words if len(w) > 2 and w not in _STOP]
+
+    s_words = _content_words(sentence)
+    if len(s_words) < 3:
+        return False
+
+    for chunk in chunk_texts:
+        c_set = set(_content_words(chunk))
+        overlap = sum(1 for w in s_words if w in c_set)
+        if overlap / len(s_words) >= threshold:
+            return True
+    return False
+
+
+# Sentences that describe what the RAG system itself should do are normative
+# claims about system behavior, not factual claims against policy documents.
+# No document says "the model should escalate" — comparing such sentences to
+# policy text produces near-zero cosine scores and causes false positives.
+_META_STATEMENT_RE = __import__('re').compile(
+    r'^(the\s+model\s+(should|must|will|can|would)'
+    r'|the\s+system\s+(should|must)'
+    r'|the\s+(rag\s+)?(chatbot|assistant|copilot)\s+(should|must))',
+    __import__('re').IGNORECASE,
+)
+
+
 def run_agent(
     context: str,
     answer: str,
@@ -218,7 +301,32 @@ def run_agent(
     -------
     DetectionResult with score, type, problematic sentences, reasoning, explanation
     """
+    import re as _re
+
     sentences = split_sentences(answer)
+
+    # ── Sentence cleanup ──────────────────────────────────────────────────────
+    # NLTK produces several types of spurious "sentences" from LLM markdown output
+    # that score near-zero and devastate the average, causing false-positive flags.
+
+    # Pass 1: strip trailing list markers that NLTK attaches to the previous sentence.
+    # e.g. "The minimum steps are:\n1." → "The minimum steps are:"
+    #      "Choose 'Something else'\n3." → "Choose 'Something else'"
+    sentences = [_re.sub(r'\s*\d+[.)]\s*$', '', s).strip() for s in sentences]
+
+    # Pass 2: drop structural fragments with no semantic payload:
+    #   - bare list prefixes left at start: "1.", "2.", "---", "**", "##"
+    #   - pure header lines ending with ":" (e.g. "The minimum steps are:")
+    #   - sentences shorter than 5 words (too short for reliable cosine scoring;
+    #     short action phrases like "Obtain the class number." (4 words) produce
+    #     unreliable low scores when compared to long context chunks that include URLs)
+    _TRIVIAL = _re.compile(r'^\s*(\d+[.)]\s*|-+\s*|[*_]+\s*|#{1,6}\s*)$')
+    sentences = [
+        s for s in sentences
+        if len(s.split()) >= 5
+        and not _TRIVIAL.match(s)
+        and not s.rstrip().endswith(':')
+    ]
 
     if not sentences:
         return DetectionResult(
@@ -235,9 +343,20 @@ def run_agent(
     if chunks:
         _chunk_texts = [c["text"].strip() for c in chunks if c.get("text", "").strip()]
     else:
-        import re as _re
         _passages = _re.split(r'\n\n(?=\[\d+\])', context.strip())
         _chunk_texts = [p.strip() for p in _passages if p.strip()] or [context]
+
+    # Strip slide-header and source-attribution noise from context before Gate 1.
+    # Lines like "--- Slide 1 ---" and "[1] Source: ..." distort the merged embedding,
+    # dropping grounded sentences from ~0.78 to ~0.60 and forcing unnecessary Gate 2 calls.
+    _clean_context = _re.sub(r'-{2,}\s*Slide\s*\d+\s*-{2,}', '', context)
+    _clean_context = _re.sub(r'^\[\d+\]\s*Source:[^\n]*\n?', '', _clean_context, flags=_re.MULTILINE)
+    _clean_context = _re.sub(r'\n{3,}', '\n\n', _clean_context).strip()
+    # Expand academic semester abbreviations so "Sp 27" matches "Spring 2027"
+    _clean_context = _expand_academic_abbrevs(_clean_context)
+
+    # Apply abbreviation expansion to individual chunk texts used in Gate 2
+    _expanded_chunk_texts = [_expand_academic_abbrevs(t) for t in _chunk_texts]
 
     support_scores: list[float] = []
     flagged: list[tuple[str, float]] = []
@@ -246,28 +365,45 @@ def run_agent(
 
     _ANAPHORIC = {"this", "these", "it", "they", "their", "its", "such", "here"}
 
+    import logging as _logging
+    _log = _logging.getLogger("rag_app")
+
     for i, sentence in enumerate(sentences):
-        result = check_sentence_support(sentence, context)
+        # Meta-statements about system behavior ("The model should escalate…")
+        # are normative instructions, not factual claims found in policy docs.
+        # Comparing them against document text produces near-zero cosine scores
+        # and causes false positives — skip the hallucination check for these.
+        if _META_STATEMENT_RE.match(sentence.strip()):
+            support_scores.append(0.65)
+            continue
+
+        # Strip markdown formatting before Gate 1 so bold headers like
+        # **Major Requirement**: don't shift the pooled sentence embedding
+        # away from the plain-text equivalent in the source documents.
+        clean_sentence = _strip_sentence_markup(sentence)
+
+        result = check_sentence_support(clean_sentence, _clean_context)
         score  = result["support_score"]
         signal = result["signal"]
 
         # Gate 2: max cosine against individual chunks (only for Gate 1 failures).
         # Each chunk is compared in isolation so unrelated chunks cannot dilute
-        # the score. A single chunk with cosine ≥ 0.65 rescues the sentence.
+        # the score. A single chunk with cosine ≥ 0.45 rescues the sentence.
         if signal != "supported":
-            import logging as _logging
-            _log = _logging.getLogger("rag_app")
             # For anaphoric sentences ("This...", "These...", "It...") the
             # bi-encoder cannot resolve the pronoun without context. Prepend
             # the previous sentence so the model sees the full referential chain.
             first_word = sentence.strip().split()[0].lower() if sentence.strip() else ""
-            gate2_text = (
+            gate2_base = (
                 sentences[i - 1] + " " + sentence if (i > 0 and first_word in _ANAPHORIC)
                 else sentence
             )
+            # Apply the same markdown + abbrev normalisation used for Gate 1
+            gate2_text = _strip_sentence_markup(gate2_base)
+
             chunk_scores = [
                 check_sentence_support(gate2_text, text)["support_score"]
-                for text in _chunk_texts
+                for text in _expanded_chunk_texts
             ]
             max_chunk_score = max(chunk_scores)
             _log.warning(
@@ -275,11 +411,20 @@ def run_agent(
                 f"chunk scores: {[round(s,3) for s in chunk_scores]} | "
                 f"max={max_chunk_score:.3f}"
             )
-            # Gate 2 threshold (0.50) is lower than Gate 1 (0.65): individual
+            # Gate 2 threshold (0.45) is lower than Gate 1 (0.65): individual
             # chunk texts are longer than the answer sentence, so the pooled
             # embedding naturally scores lower even for semantically aligned pairs.
-            if max_chunk_score >= 0.50:
+            # LLM answers also paraphrase/reformat source text, further lowering
+            # raw cosine scores even for genuinely grounded claims.
+            if max_chunk_score >= 0.45:
                 score  = max_chunk_score
+                signal = "supported"
+                nli_rescued += 1
+            elif _word_overlap_supported(gate2_text, _expanded_chunk_texts, threshold=0.65):
+                # Literal-quote rescue: the sentence is a near-direct copy of
+                # source text but the large chunk embedding is diluted.  High
+                # content-word overlap confirms the sentence is grounded.
+                score  = 0.55
                 signal = "supported"
                 nli_rescued += 1
 
@@ -465,6 +610,7 @@ def evaluate_qa_data(
             answer=sample["answer"],
             question=sample["question"],
             verbose=verbose,
+            verify_claims=True,
         )
 
         pred       = int(result.is_hallucinated)
@@ -547,6 +693,7 @@ def run_pipeline(
             answer=row["answer"],
             question=row.get("question", ""),
             verbose=verbose,
+            verify_claims=True,
         )
         result.ground_truth_label = int(row["label"])
 
